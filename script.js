@@ -1405,6 +1405,28 @@ function openStabilizationChecklistModal(patientId) {
   openModal("Checklist de Segurança da Estabilização - " + p.nome, stabilizationChecklistModalBody(p), `<button class="secondary-action" data-action="close-modal">Fechar</button>`);
 }
 
+const transferSafetyChecklist = [
+  "Paciente identificado e dados conferidos",
+  "Unidade de destino e vaga regulada verificadas",
+  "Documentos e resumo assistencial separados",
+  "Sinais vitais reavaliados antes da saída",
+  "Transporte e profissional acompanhante confirmados"
+];
+
+function openTransferChecklistModal(transferId) {
+  const transfer = GsiApi.list("transferencias").find((t) => t.id === transferId);
+  if (!transfer) return;
+  const complete = transfer.checklist === "Completo";
+  openModal("Checklist de Transferência - " + (transfer.paciente || "Paciente"), `
+    <p class="field full"><span>Paciente</span>${escapeHtml(transfer.paciente || "a validar")}</p>
+    <p class="field full"><span>Destino</span>${escapeHtml(displayText(transfer.destino || "a validar"))}</p>
+    <form id="transferChecklistForm" class="checklist">
+      ${transferSafetyChecklist.map((item, index) => `<label><input type="checkbox" name="item${index}" required ${complete ? "checked" : ""}> ${escapeHtml(item)}</label>`).join("")}
+    </form>
+    <p class="muted" style="margin-top:12px">Status atual do checklist: <strong>${escapeHtml(displayText(transfer.checklist || "Pendente"))}</strong></p>
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="confirm-transfer-checklist" data-id="${transfer.id}">Confirmar checklist</button>`);
+}
+
 function openObservationReassessModal(patientId, modulo = "observacaoClinica") {
   const p = patientById(patientId);
   if (!p) return;
@@ -1480,26 +1502,58 @@ function observacaoObstetrica() {
 
 function transferencias() {
   const list = GsiApi.list("transferencias");
+  const checklistCompleto = list.filter((t) => t.checklist === "Completo").length;
+  const saidasConfirmadas = list.filter((t) => t.saida && t.saida !== "--").length;
+  const ambulancias = list.filter((t) => t.usouAmbulancia === "Sim").length;
+  const destinos = countBy(list, "destino").slice(0, 3);
   const rows = list.map((t) => {
     const paciente = t.pacienteId ? patientById(t.pacienteId) : null;
+    const saida = t.saida && t.saida !== "--" ? t.saida : "Não confirmada";
+    const saidaPendente = t.checklist !== "Completo" || t.status !== "Vaga confirmada";
     return [
       `${escapeHtml(t.paciente)}${paciente?.classificacao ? `<br>${tag(paciente.classificacao)}` : ""}`,
-      escapeHtml(displayText(t.motivo)), escapeHtml(displayText(t.destino)), status(t.status), escapeHtml(t.acompanhante), status(t.checklist), escapeHtml(t.saida),
+      escapeHtml(displayText(t.motivo)), escapeHtml(displayText(t.destino)), status(t.status), escapeHtml(t.acompanhante), status(t.checklist), escapeHtml(saida),
       `<div class="actions queue-actions queue-actions-grid">
-        ${actionButton("Aprovar vaga", "transfer-status", t.id, 'data-status="Vaga confirmada"', "queue-action queue-action-primary")}
         ${actionButton("Completar checklist", "transfer-checklist", t.id, "", "queue-action")}
-        ${actionButton("Confirmar saída", "transfer-departure", t.id, "", "queue-action")}
+        ${actionButton("Aprovar vaga", "transfer-status", t.id, 'data-status="Vaga confirmada"', "queue-action queue-action-primary")}
+        ${actionButton("Confirmar saída", "transfer-departure", t.id, "", `queue-action${saidaPendente ? " queue-action-muted" : ""}`)}
         ${actionButton("Cancelar", "transfer-status", t.id, 'data-status="Cancelado"', "danger queue-action")}
       </div>`
     ];
   });
   return `
     ${pageHead("Transferências", "Controle demonstrativo de regulação, destino, checklist e saída.", "Solicitar transferência", "open-transfer-request")}
-    <section class="grid module-stats">
+    <section class="grid module-stats transfer-stats">
       ${metric("Em análise", list.filter((t) => t.status === "Em analise").length, "Regulação", "warning")}
       ${metric("Aguardando vaga", list.filter((t) => t.status === "Aguardando vaga").length, "Pendente")}
       ${metric("Vaga confirmada", list.filter((t) => t.status === "Vaga confirmada").length, "Prontas para saída", "primary")}
       ${metric("Checklist pendente", list.filter((t) => t.checklist === "Pendente").length, "Conferência obrigatória", "danger")}
+    </section>
+    <section class="grid two-column section-gap transfer-overview">
+      <div class="panel">
+        <h2>Regulação e saída segura</h2>
+        <div class="transfer-flow">
+          <span>Solicitação</span>
+          <span>Regulação</span>
+          <span>Checklist</span>
+          <span>Saída</span>
+        </div>
+        <div class="checklist-summary">
+          <div class="checklist-summary-item andamento"><strong>${list.length}</strong><span>transferência(s) em acompanhamento</span></div>
+          <div class="checklist-summary-item completo"><strong>${checklistCompleto}</strong><span>checklist(s) completo(s)</span></div>
+          <div class="checklist-summary-item pendente"><strong>${saidasConfirmadas}</strong><span>saída(s) confirmada(s)</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Destino e transporte</h2>
+        <div class="transfer-summary">
+          <p><span>Ambulância registrada</span><strong>${ambulancias}</strong></p>
+          <p><span>Destinos monitorados</span><strong>${destinos.length || "--"}</strong></p>
+        </div>
+        ${destinos.length
+          ? `<ul class="list transfer-destinations">${destinos.map(([destino, qtd]) => `<li><strong>${escapeHtml(destino)}</strong><span>${qtd} solicitação(ões)</span></li>`).join("")}</ul>`
+          : '<p class="muted">Nenhum destino registrado ainda.</p>'}
+      </div>
     </section>
     <section class="panel section-gap queue-panel queue-panel-waiting">
       <h2>Transferências em andamento <span class="queue-count">${list.length}</span></h2>
@@ -2777,9 +2831,13 @@ function handleAction(action, button) {
     showToast("Status da transferência atualizado.");
     return renderPage(currentPage);
   }
-  if (action === "transfer-checklist") {
+  if (action === "transfer-checklist") return openTransferChecklistModal(id);
+  if (action === "confirm-transfer-checklist") {
+    const form = byId("transferChecklistForm");
+    if (!requireForm(form)) return;
     GsiApi.update("transferencias", id, { checklist: "Completo" });
     showToast("Checklist de transferência concluído.");
+    closeModal();
     return renderPage(currentPage);
   }
   if (action === "transfer-departure") {
