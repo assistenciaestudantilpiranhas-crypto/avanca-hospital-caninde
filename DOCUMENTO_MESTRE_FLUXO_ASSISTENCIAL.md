@@ -11,6 +11,130 @@ Este documento define a regra funcional de referência para o fluxo assistencial
 - Status de paciente e tempos assistenciais só devem mudar por ação funcional explícita do usuário ou regra já existente no fluxo.
 - Indicadores e relatórios devem usar registros existentes, sem inventar horários ou resultados.
 
+## Aba Atendimentos — Central operacional do fluxo assistencial
+
+### Definição
+
+A aba **Atendimentos** representa a central operacional dos atendimentos ativos da unidade. Sua função é acompanhar o fluxo assistencial em tempo real, permitindo visualizar onde cada paciente se encontra dentro do percurso assistencial, desde a abertura da ficha até o desfecho final.
+
+A aba não substitui os módulos assistenciais específicos. Ela organiza a visão geral do atendimento em curso e direciona o usuário para o módulo adequado quando houver necessidade de continuidade do cuidado.
+
+### Finalidade da aba
+
+A aba Atendimentos deve permitir identificar:
+
+- quais pacientes estão em atendimento ativo;
+- em qual etapa assistencial cada paciente se encontra;
+- há quanto tempo o paciente permanece na etapa atual;
+- qual é o tempo total desde a chegada à unidade;
+- qual a classificação de risco;
+- qual o status atual;
+- qual profissional ou setor está responsável;
+- qual é o próximo direcionamento operacional.
+
+### Regra conceitual
+
+A regra principal da aba Atendimentos é:
+
+**Atendimentos acompanha o fluxo; os módulos assistenciais executam o cuidado.**
+
+Isso significa que a aba Atendimentos deve servir como painel de acompanhamento e gestão operacional, enquanto as ações clínicas e assistenciais devem permanecer nos módulos próprios.
+
+### O que a aba Atendimentos deve exibir
+
+A tela deve priorizar informações como:
+
+- paciente;
+- horário de chegada;
+- classificação de risco;
+- etapa atual;
+- status atual;
+- tempo na etapa;
+- permanência total;
+- profissional ou setor responsável;
+- acesso ao prontuário;
+- acesso ao módulo correspondente.
+
+### Etapas que podem aparecer na aba Atendimentos
+
+A aba pode exibir pacientes nas seguintes situações:
+
+- aguardando triagem;
+- em triagem;
+- aguardando consulta;
+- em consulta;
+- em enfermagem/medicação;
+- em observação clínica;
+- em observação pediátrica;
+- em observação obstétrica;
+- em sala de estabilização;
+- em transferência regulada;
+- com desfecho final registrado nas últimas 24 horas.
+
+### Ações permitidas
+
+As ações da aba Atendimentos devem ser prioritariamente de consulta, acompanhamento e direcionamento, como:
+
+- ver prontuário;
+- acessar etapa correspondente;
+- acompanhar situação do atendimento;
+- visualizar tempos e pendências.
+
+### Ações que não devem ser concentradas nesta aba
+
+A aba Atendimentos não deve concentrar ações assistenciais específicas, como:
+
+- iniciar triagem;
+- registrar classificação de risco;
+- prescrever medicação;
+- solicitar exames;
+- registrar conduta médica;
+- dar alta;
+- confirmar transferência;
+- registrar evolução de enfermagem;
+- concluir checklist assistencial.
+
+Essas ações devem permanecer nos módulos próprios, conforme a etapa do cuidado:
+
+- Triagem;
+- Consulta;
+- Enfermagem;
+- Farmácia;
+- Exames;
+- Observação Clínica;
+- Observação Pediátrica;
+- Observação Obstétrica;
+- Sala de Estabilização;
+- Transferências.
+
+### Relação com os indicadores
+
+A aba Atendimentos deve utilizar os tempos registrados no fluxo assistencial para demonstrar a situação operacional da unidade, especialmente:
+
+- tempo desde a chegada;
+- tempo na etapa atual;
+- tempo até triagem;
+- tempo entre triagem e consulta;
+- tempo em observação;
+- tempo em transferência;
+- permanência total.
+
+Essas informações devem ser derivadas dos eventos reais registrados no atendimento, sem criação de dados fictícios.
+
+### Relação com a lista de pacientes
+
+A aba Atendimentos difere da aba Pacientes.
+
+A aba **Pacientes** tem função de consulta, busca, identificação, prontuário e lista operacional das últimas 24 horas.
+
+A aba **Atendimentos** tem função de acompanhamento do fluxo ativo da unidade, permitindo visualizar a situação operacional dos atendimentos em andamento.
+
+### Regra de preservação funcional
+
+A aba Atendimentos não deve alterar regras clínicas, status internos, tempos, desfechos ou dados assistenciais sem validação prévia.
+
+Qualquer mudança funcional nessa aba deve respeitar o Documento Mestre do Fluxo Assistencial do Paciente.
+
 ## Entrada do Paciente
 
 O paciente entra no sistema pela recepção/porta de entrada ou pelo cadastro direto.
