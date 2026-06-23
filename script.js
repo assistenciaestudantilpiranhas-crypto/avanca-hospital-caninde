@@ -543,16 +543,17 @@ function patientTimesCell(patient) {
 
 function patientActionsCell(p) {
   return `<div class="actions queue-actions queue-actions-grid">
-    ${actionButton("Iniciar atendimento", "start-care", p.id, "", "queue-action queue-action-primary")}
-    ${actionButton("Chamar paciente", "call-patient", p.id, "", "queue-action")}
-    ${actionButton("Iniciar triagem", "open-triage-modal", p.id, "", "queue-action")}
-    ${actionButton("Ver prontuário", "view-patient", p.id, "", "queue-action")}
-    ${actionButton("Dar alta", "discharge-patient", p.id, "", "danger queue-action")}
+    ${actionButton("Ver prontuário", "view-patient", p.id, "", "queue-action queue-action-primary")}
   </div>`;
 }
 
+function isPatientOperationalVisible(patient = {}) {
+  if (!patient.horaDesfechoFinalTs) return true;
+  return Date.now() - Number(patient.horaDesfechoFinalTs) < 24 * 60 * 60 * 1000;
+}
+
 function pacientes() {
-  const list = GsiApi.list("pacientes");
+  const list = GsiApi.list("pacientes").filter(isPatientOperationalVisible);
   const rows = list.map((p) => [
     escapeHtml(p.nome),
     escapeHtml(p.nascimento),
@@ -1501,14 +1502,16 @@ function observacaoObstetrica() {
 }
 
 function transferencias() {
-  const list = GsiApi.list("transferencias");
-  const checklistCompleto = list.filter((t) => t.checklist === "Completo").length;
-  const saidasConfirmadas = list.filter((t) => t.saida && t.saida !== "--").length;
-  const ambulancias = list.filter((t) => t.usouAmbulancia === "Sim").length;
-  const destinos = countBy(list, "destino").slice(0, 3);
+  const allTransfers = GsiApi.list("transferencias");
+  const list = allTransfers.filter(isTransferInProgress);
+  const checklistCompleto = allTransfers.filter((t) => t.checklist === "Completo").length;
+  const saidasConfirmadas = allTransfers.filter((t) => isTransferDepartureConfirmed(t)).length;
+  const ambulancias = allTransfers.filter((t) => t.usouAmbulancia === "Sim").length;
+  const destinos = countBy(allTransfers, "destino").slice(0, 3);
+  const regulacoesConcluidas = allTransfers.filter((t) => ["Vaga confirmada", "Concluida", "Transferido", "Transferência regulada"].includes(t.status)).length;
   const rows = list.map((t) => {
     const paciente = t.pacienteId ? patientById(t.pacienteId) : null;
-    const saida = t.saida && t.saida !== "--" ? t.saida : "Não confirmada";
+    const saida = t.horaSaidaTransferencia || (t.saida && t.saida !== "--" ? t.saida : "Não confirmada");
     const saidaPendente = t.checklist !== "Completo" || t.status !== "Vaga confirmada";
     return [
       `${escapeHtml(t.paciente)}${paciente?.classificacao ? `<br>${tag(paciente.classificacao)}` : ""}`,
@@ -1533,10 +1536,10 @@ function transferencias() {
       <div class="panel">
         <h2>Regulação e saída segura</h2>
         <div class="transfer-flow">
-          <span>Solicitação</span>
-          <span>Regulação</span>
-          <span>Checklist</span>
-          <span>Saída</span>
+          <span><strong>${list.length}</strong><small>em acompanhamento</small></span>
+          <span><strong>${regulacoesConcluidas}</strong><small>regulações concluídas</small></span>
+          <span><strong>${checklistCompleto}</strong><small>checklists completos</small></span>
+          <span><strong>${saidasConfirmadas}</strong><small>saídas confirmadas</small></span>
         </div>
         <div class="checklist-summary">
           <div class="checklist-summary-item andamento"><strong>${list.length}</strong><span>transferência(s) em acompanhamento</span></div>
@@ -1562,6 +1565,24 @@ function transferencias() {
         : '<p class="muted">Nenhuma transferência registrada no momento.</p>'}
     </section>
   `;
+}
+
+function isTransferDepartureConfirmed(transfer = {}) {
+  const patient = transfer.pacienteId ? patientById(transfer.pacienteId) : null;
+  const finalStatuses = ["Concluida", "Concluída", "Transferido", "Transferência regulada"];
+  return Boolean(
+    transfer.horaSaidaTransferencia ||
+    (transfer.saida && transfer.saida !== "--") ||
+    transfer.desfechoFinal === "Transferência regulada" ||
+    patient?.desfechoFinal === "Transferência regulada" ||
+    (patient?.horaDesfechoFinal && patient?.desfechoFinal === "Transferência regulada") ||
+    finalStatuses.includes(transfer.status) ||
+    finalStatuses.includes(patient?.status)
+  );
+}
+
+function isTransferInProgress(transfer = {}) {
+  return !isTransferDepartureConfirmed(transfer);
 }
 
 function indicadores() {
@@ -2260,7 +2281,7 @@ function renderPage(pageId = currentPage) {
 
 function filterPatients(term) {
   const normalized = term.trim().toLowerCase();
-  const filtered = GsiApi.list("pacientes").filter((p) => Object.values(p).join(" ").toLowerCase().includes(normalized));
+  const filtered = GsiApi.list("pacientes").filter((p) => isPatientOperationalVisible(p) && Object.values(p).join(" ").toLowerCase().includes(normalized));
   const rows = filtered.map((p) => [
     escapeHtml(p.nome), escapeHtml(p.nascimento), escapeHtml(municipioUfLabel(p)), escapeHtml(p.cpf), escapeHtml(p.sus), tag(p.classificacao), status(p.status), patientTimesCell(p),
     patientActionsCell(p)
@@ -2417,7 +2438,7 @@ function openTransferModal(patientId = "p1") {
   setupOther("destino", "otherTransferDestinoField", "Outro");
 }
 
-function openPatientModal(id) {
+function openPatientModalLegacy(id) {
   const p = patientById(id);
   if (!p) return;
   openModal("Prontuário do paciente", `
@@ -2479,6 +2500,301 @@ function openPatientModal(id) {
         </div>
       </div>
     ` : ""}
+  `, `<button class="secondary-action" data-action="close-modal">Fechar</button>`);
+}
+
+const noRecord = "Sem registro";
+
+function recordValue(value) {
+  if (value === undefined || value === null || value === "" || value === "--" || value === "-") return noRecord;
+  return displayText(value);
+}
+
+function hasRecordValue(value) {
+  return recordValue(value) !== noRecord;
+}
+
+function hasAnyRecordValue(...values) {
+  return values.some(hasRecordValue);
+}
+
+function cleanClinicalText(value) {
+  const text = String(value || "").trim();
+  if (!text) return noRecord;
+  const letters = (text.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+  const vowels = (text.match(/[aeiouáéíóúâêôãõàü]/gi) || []).length;
+  const hasMeaningfulSeparator = /[\s.,;:]/.test(text);
+  if (text.length >= 12 && (!hasMeaningfulSeparator || vowels / Math.max(letters, 1) < 0.22)) return noRecord;
+  return text;
+}
+
+function cleanTriageJustification(value) {
+  return cleanClinicalText(value);
+}
+
+function recordField(label, value, extra = "") {
+  return `<p class="field ${extra}"><span>${escapeHtml(label)}</span>${escapeHtml(recordValue(value))}</p>`;
+}
+
+function optionalRecordField(label, value, extra = "") {
+  return hasRecordValue(value) ? recordField(label, value, extra) : "";
+}
+
+function recordStatusField(label, value) {
+  return `<p class="field"><span>${escapeHtml(label)}</span>${value ? status(value) : escapeHtml(noRecord)}</p>`;
+}
+
+function recordTagField(label, value) {
+  return `<p class="field"><span>${escapeHtml(label)}</span>${value ? tag(value) : escapeHtml(noRecord)}</p>`;
+}
+
+function recordSection(title, body) {
+  return `
+    <div class="record-block">
+      <h3>${escapeHtml(title)}</h3>
+      ${body || `<p class="muted">${noRecord}</p>`}
+    </div>
+  `;
+}
+
+function relationByPatient(listName, patient = {}) {
+  return GsiApi.list(listName).filter((item) => item.pacienteId === patient.id || (!!item.paciente && item.paciente === patient.nome));
+}
+
+function firstRelation(listName, patient = {}) {
+  return relationByPatient(listName, patient)[0] || {};
+}
+
+function elapsedBetween(startTs, endTs, startClock = "", endClock = "") {
+  const start = Number(startTs);
+  const end = Number(endTs);
+  if (Number.isFinite(start) && Number.isFinite(end) && end >= start) return formatRecordElapsed(end - start);
+  const startMin = minutesFromClock(startClock);
+  const endMin = minutesFromClock(endClock);
+  if (startMin === null || endMin === null) return noRecord;
+  const delta = endMin >= startMin ? endMin - startMin : (24 * 60 - startMin) + endMin;
+  return formatRecordElapsed(delta * 60000);
+}
+
+function formatRecordElapsed(ms) {
+  if (ms === undefined || ms === null || ms < 0) return noRecord;
+  const totalMin = ms > 0 ? Math.max(1, Math.ceil(ms / 60000)) : 0;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}min` : `${m}min`;
+}
+
+function totalStayValue(patient = {}, chegada = "", horaDesfecho = "") {
+  if (patient.horaDesfechoFinalTs || patient.horaDesfechoTs || hasRecordValue(horaDesfecho)) {
+    return elapsedBetween(patient.horaChegadaTs, patient.horaDesfechoFinalTs || patient.horaDesfechoTs, chegada, horaDesfecho);
+  }
+  return "Em andamento";
+}
+
+function eventSortValue(event) {
+  if (Number.isFinite(Number(event.ts))) return Number(event.ts);
+  const minutes = minutesFromClock(event.time);
+  return minutes === null ? Infinity : minutes;
+}
+
+function addTimelineEvent(events, time, label, ts) {
+  if (!time || time === "--" || time === "-") return;
+  events.push({ time, label, ts });
+}
+
+function listItems(items, emptyText = noRecord) {
+  if (!items.length) return `<p class="muted">${escapeHtml(emptyText)}</p>`;
+  return `<ul class="list">${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
+}
+
+function observationRecords(patient = {}) {
+  return [
+    ["Observação clínica", patient.observacaoClinica],
+    ["Observação pediátrica", patient.observacaoPediatrica],
+    ["Observação obstétrica", patient.observacaoObstetrica]
+  ].filter(([, obs]) => !!obs);
+}
+
+function openPatientModal(id) {
+  const p = patientById(id);
+  if (!p) return;
+
+  const atendimento = firstRelation("atendimentos", p);
+  const exames = relationByPatient("exames", p);
+  const prescricoes = relationByPatient("prescricoes", p);
+  const transferencia = firstRelation("transferencias", p);
+  const observacoes = observationRecords(p);
+  const evolucoes = p.evolucoesEnfermagem || [];
+  const stabilizationStatus = p.estabilizacao ? getPatientChecklistStatus(p).label : "";
+  const triageJustification = cleanTriageJustification(p.triagemRisco?.justificativaClassificacao);
+  const condutaRegistrada = cleanClinicalText(p.conduta?.conduta);
+  const prescricaoRegistrada = cleanClinicalText(p.conduta?.prescricao);
+  const desfechoFinal = p.desfechoFinal || p.desfecho || "";
+  const horaDesfecho = p.horaDesfechoFinal || p.horaDesfecho || transferencia.horaSaidaTransferencia || transferencia.saida || "";
+  const chegada = p.horaChegada || atendimento.chegada || "";
+  const inicioConsulta = p.horaInicioConsulta || atendimento.inicioConsulta || "";
+  const profissionalConsulta = p.profissionalResponsavel || atendimento.profissional || "";
+  const hasTriageData = Boolean(p.triagemRisco || p.sinaisVitais || p.horaInicioTriagem || p.horaFimTriagem || p.classificacao);
+  const hasConsultData = Boolean(inicioConsulta || p.horaChamadaConsulta || p.conduta);
+  const hasTransferData = Boolean(transferencia.id || hasAnyRecordValue(transferencia.status, transferencia.destino, transferencia.checklist, transferencia.horaSaidaTransferencia, transferencia.saida));
+  const timeline = [];
+
+  addTimelineEvent(timeline, chegada, "Ficha aberta", p.horaChegadaTs);
+  addTimelineEvent(timeline, p.horaInicioTriagem, "Triagem iniciada", p.horaInicioTriagemTs);
+  addTimelineEvent(timeline, p.horaFimTriagem, "Triagem concluída", p.horaFimTriagemTs);
+  addTimelineEvent(timeline, p.horaChamadaConsulta, "Paciente chamado para consulta", p.horaChamadaConsultaTs);
+  addTimelineEvent(timeline, inicioConsulta, "Consulta iniciada", p.horaInicioConsultaTs);
+  addTimelineEvent(timeline, p.horaConduta, "Conduta médica registrada", p.horaCondutaTs);
+  evolucoes.forEach((item) => addTimelineEvent(timeline, item.horario, "Evolução de enfermagem registrada"));
+  prescricoes.forEach((item) => addTimelineEvent(timeline, item.horario, `Prescrição: ${item.medicamento || "medicação"}`));
+  exames.forEach((item) => {
+    addTimelineEvent(timeline, item.horario, `Exame solicitado: ${item.exame || item.tipo || "exame"}`);
+    addTimelineEvent(timeline, item.horarioLiberacao, `Resultado liberado: ${item.exame || item.tipo || "exame"}`);
+  });
+  observacoes.forEach(([tipo, obs]) => {
+    addTimelineEvent(timeline, obs.inicio, `Entrada em ${tipo}`, obs.inicioTimestamp);
+    (obs.reavaliacoes || []).forEach((item) => addTimelineEvent(timeline, item.horario, `Reavaliação em ${tipo}`));
+  });
+  if (p.estabilizacao) {
+    addTimelineEvent(timeline, p.estabilizacao.inicio, "Entrada na Sala de Estabilização", p.estabilizacao.inicioTimestamp);
+    (p.estabilizacao.reavaliacoes || []).forEach((item) => addTimelineEvent(timeline, item.horario, "Reavaliação na Sala de Estabilização"));
+  }
+  addTimelineEvent(timeline, transferencia.horario || transferencia.horaSolicitacaoTransferencia, "Transferência solicitada", transferencia.horaSolicitacaoTransferenciaTs);
+  addTimelineEvent(timeline, transferencia.horaAprovacaoVaga, "Vaga de transferência aprovada", transferencia.horaAprovacaoVagaTs);
+  addTimelineEvent(timeline, transferencia.horaSaidaTransferencia || transferencia.saida, "Saída de transferência confirmada", transferencia.horaSaidaTransferenciaTs);
+  addTimelineEvent(timeline, horaDesfecho, `Desfecho final: ${desfechoFinal || "registrado"}`, p.horaDesfechoFinalTs || p.horaDesfechoTs);
+
+  const sinais = p.sinaisVitais;
+  const sinaisBody = sinais ? `
+    <div class="form-grid">
+      ${optionalRecordField("Pressão arterial", sinais.pa)}
+      ${optionalRecordField("Frequência cardíaca", sinais.fc)}
+      ${optionalRecordField("Frequência respiratória", sinais.fr)}
+      ${optionalRecordField("Saturação", sinais.sat)}
+      ${optionalRecordField("Temperatura", sinais.temp)}
+      ${optionalRecordField("Glicemia", sinais.glicemia)}
+      ${optionalRecordField("Dor (0 a 10)", sinais.dor)}
+      ${optionalRecordField("Observações da triagem", sinais.obs, "full")}
+    </div>
+  ` : "";
+
+  const enfermagemBody = evolucoes.length ? recordSection("Enfermagem/medicação", listItems(evolucoes.map((item) => `
+    <strong>${escapeHtml(recordValue(item.horario))}</strong> -
+    ${escapeHtml(recordValue(item.evolucao || item.procedimentos || item.medicacoes))}
+    <br><span class="muted">${escapeHtml(recordValue(item.profissional))}</span>
+  `))) : "";
+
+  const farmaciaBody = prescricoes.length ? recordSection("Farmácia", listItems(prescricoes.map((item) => `
+    <strong>${escapeHtml(recordValue(item.medicamento))}</strong> -
+    ${escapeHtml(recordValue(item.dose))} ${escapeHtml(recordValue(item.via))}
+    <br><span class="muted">${escapeHtml(recordValue(item.status))} | ${escapeHtml(recordValue(item.horario))} | ${escapeHtml(recordValue(item.prescritor))}</span>
+  `))) : "";
+
+  const examesBody = exames.length ? recordSection("Exames", listItems(exames.map((item) => `
+    <strong>${escapeHtml(recordValue(item.exame || item.tipo))}</strong> -
+    ${escapeHtml(recordValue(item.status))}
+    <br><span class="muted">${escapeHtml(recordValue(item.horario))} | Resultado: ${escapeHtml(recordValue(item.resultado))}${item.critico ? " | Resultado crítico comunicado" : ""}</span>
+  `))) : "";
+
+  const observacaoBody = observacoes.length ? recordSection("Observação", observacoes.map(([tipo, obs]) => `
+    <div class="form-grid">
+      ${recordField("Tipo", tipo)}
+      ${optionalRecordField("Entrada", obs.inicio)}
+      ${optionalRecordField("Aceite/recebimento", obs.origem)}
+      ${optionalRecordField("Saída", obs.saida)}
+      ${optionalRecordField("Tempo de permanência", obs.inicioTimestamp ? elapsedBetween(obs.inicioTimestamp, p.horaDesfechoFinalTs || p.horaDesfechoTs || Date.now()) : "", "full")}
+      ${optionalRecordField("Reavaliações", (obs.reavaliacoes || []).length ? `${obs.reavaliacoes.length} registro(s)` : "", "full")}
+    </div>
+  `).join("")) : "";
+
+  const estabilizacaoBody = p.estabilizacao ? recordSection("Sala de Estabilização", `
+    <div class="form-grid">
+      ${optionalRecordField("Entrada", p.estabilizacao.inicio)}
+      ${optionalRecordField("Origem", p.estabilizacao.origem)}
+      ${optionalRecordField("Checklist de segurança", stabilizationStatus)}
+      ${optionalRecordField("Reavaliações", (p.estabilizacao.reavaliacoes || []).length ? `${p.estabilizacao.reavaliacoes.length} registro(s)` : "")}
+      ${optionalRecordField("Saída/encaminhamento", p.estabilizacao.saida || p.estabilizacao.encaminhamento, "full")}
+    </div>
+  `) : "";
+
+  const transferenciaBody = hasTransferData ? recordSection("Transferência", `
+    <div class="form-grid">
+      ${optionalRecordField("Solicitação de transferência", transferencia.horario || transferencia.horaSolicitacaoTransferencia)}
+      ${recordStatusField("Status da regulação", transferencia.status)}
+      ${optionalRecordField("Vaga aprovada", transferencia.horaAprovacaoVaga || (transferencia.status === "Vaga confirmada" ? "Sim" : ""))}
+      ${optionalRecordField("Checklist de transferência", transferencia.checklist)}
+      ${optionalRecordField("Saída confirmada", transferencia.horaSaidaTransferencia || transferencia.saida)}
+      ${optionalRecordField("Destino", transferencia.destino)}
+      ${optionalRecordField("Profissional acompanhante", transferencia.acompanhante)}
+      ${optionalRecordField("Desfecho", transferencia.desfechoFinal || p.desfechoFinal)}
+    </div>
+  `) : "";
+
+  const timelineBody = timeline.length
+    ? `<ul class="list">${timeline.sort((a, b) => eventSortValue(a) - eventSortValue(b)).map((event) => `<li><strong>${escapeHtml(event.time)}</strong> - ${escapeHtml(event.label)}</li>`).join("")}</ul>`
+    : `<p class="muted">${noRecord}</p>`;
+
+  openModal("Prontuário do paciente", `
+    ${recordSection("Identificação do paciente", `
+      <div class="form-grid">
+        ${recordField("Nome", p.nome, "full")}
+        ${recordField("Nascimento / idade", `${recordValue(p.nascimento)} | ${calculateAge(p.nascimento)}`)}
+        ${recordField("Município/UF", municipioUfLabel(p))}
+        ${recordField("CPF", p.cpf)}
+        ${recordField("Cartão SUS", p.sus)}
+      </div>
+    `)}
+    ${recordSection("Dados da entrada/ficha", `
+      <div class="form-grid">
+        ${recordField("Hora de chegada", chegada)}
+        ${recordField("Abertura da ficha", chegada)}
+        ${recordField("Queixa principal", p.queixa || atendimento.motivo, "full")}
+        ${recordStatusField("Status atual", p.status)}
+      </div>
+    `)}
+    ${hasTriageData ? recordSection("Triagem", `
+      <div class="form-grid">
+        ${recordTagField("Classificação de risco", p.classificacao || p.triagemRisco?.classificacaoSugerida)}
+        ${optionalRecordField("Início da triagem", p.horaInicioTriagem)}
+        ${optionalRecordField("Fim da triagem", p.horaFimTriagem)}
+        ${optionalRecordField("Profissional da triagem", p.triagemRisco?.profissional)}
+        ${recordField("Justificativa", triageJustification, "full")}
+      </div>
+      ${sinaisBody}
+    `) : ""}
+    ${hasConsultData ? recordSection("Consulta médica", `
+      <div class="form-grid">
+        ${optionalRecordField("Horário da chamada", p.horaChamadaConsulta)}
+        ${optionalRecordField("Início da consulta", inicioConsulta)}
+        ${optionalRecordField("Profissional responsável", profissionalConsulta)}
+        ${recordField("Conduta registrada", condutaRegistrada, "full")}
+        ${recordField("Prescrição", prescricaoRegistrada, "full")}
+        ${optionalRecordField("Solicitação de exame", p.conduta?.exames, "full")}
+        ${optionalRecordField("Destino após consulta", p.conduta?.destino)}
+      </div>
+    `) : ""}
+    ${enfermagemBody}
+    ${farmaciaBody}
+    ${examesBody}
+    ${observacaoBody}
+    ${estabilizacaoBody}
+    ${transferenciaBody}
+    ${recordSection("Desfecho final", `
+      <div class="form-grid">
+        ${recordField("Desfecho", desfechoFinal)}
+        ${recordField("Hora do desfecho", horaDesfecho)}
+      </div>
+    `)}
+    ${recordSection("Tempos do atendimento", `
+      <div class="form-grid">
+        ${recordField("Tempo até triagem", elapsedBetween(p.horaChegadaTs, p.horaInicioTriagemTs || p.horaFimTriagemTs, chegada, p.horaInicioTriagem || p.horaFimTriagem))}
+        ${recordField("Triagem até consulta", elapsedBetween(p.horaFimTriagemTs, p.horaInicioConsultaTs, p.horaFimTriagem, inicioConsulta))}
+        ${observacoes.length ? recordField("Tempo em observação", observacoes[0]?.[1]?.inicioTimestamp ? elapsedBetween(observacoes[0][1].inicioTimestamp, p.horaDesfechoFinalTs || p.horaDesfechoTs || Date.now()) : "") : ""}
+        ${hasTransferData ? recordField("Tempo até transferência", transferencia.horaSaidaTransferenciaTs ? elapsedBetween(p.horaChegadaTs, transferencia.horaSaidaTransferenciaTs, chegada, transferencia.horaSaidaTransferencia) : "") : ""}
+        ${recordField("Permanência total", totalStayValue(p, chegada, horaDesfecho), "full")}
+      </div>
+    `)}
+    ${recordSection("Linha do tempo do atendimento", timelineBody)}
   `, `<button class="secondary-action" data-action="close-modal">Fechar</button>`);
 }
 
@@ -2841,11 +3157,28 @@ function handleAction(action, button) {
     return renderPage(currentPage);
   }
   if (action === "transfer-departure") {
-    GsiApi.update("transferencias", id, { status: "Concluida", saida: nowTime() });
+    const horarioSaida = nowTime();
+    const saidaTs = Date.now();
+    GsiApi.update("transferencias", id, {
+      status: "Concluida",
+      saida: horarioSaida,
+      horaSaidaTransferencia: horarioSaida,
+      horaSaidaTransferenciaTs: saidaTs,
+      desfechoFinal: "Transferência regulada",
+      horaDesfechoFinal: horarioSaida,
+      horaDesfechoFinalTs: saidaTs
+    });
     const transferencia = GsiApi.list("transferencias").find((t) => t.id === id);
     if (transferencia?.pacienteId) {
       setPatientTimeIfMissing(transferencia.pacienteId, "horaDesfecho");
-      GsiApi.update("pacientes", transferencia.pacienteId, { status: "Transferência regulada", desfecho: "Transferência regulada" });
+      const paciente = patientById(transferencia.pacienteId) || {};
+      GsiApi.update("pacientes", transferencia.pacienteId, {
+        status: "Transferência regulada",
+        desfecho: "Transferência regulada",
+        desfechoFinal: "Transferência regulada",
+        horaDesfechoFinal: paciente.horaDesfechoFinal || horarioSaida,
+        horaDesfechoFinalTs: paciente.horaDesfechoFinalTs || saidaTs
+      });
     }
     showToast("Saída do paciente registrada.");
     return renderPage(currentPage);
