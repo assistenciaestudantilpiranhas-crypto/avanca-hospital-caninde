@@ -63,6 +63,7 @@ Atue como:
 8. Preservar a compatibilidade com publicação estática no Netlify.
 9. Não adicionar backend, banco de dados real ou autenticação real sem autorização expressa.
 10. Ao final de cada tarefa, informar quais arquivos foram alterados.
+11. Antes de qualquer alteração em fluxo assistencial, status do paciente, tempos, indicadores, consulta, triagem, observação, sala de estabilização, transferência, enfermagem, farmácia, exames ou desfechos, leia obrigatoriamente o DOCUMENTO_MESTRE_FLUXO_ASSISTENCIAL.md.
 
 ## Objetivo visual
 
