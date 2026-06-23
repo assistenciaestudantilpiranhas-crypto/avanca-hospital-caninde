@@ -552,6 +552,14 @@ function isPatientOperationalVisible(patient = {}) {
   return Date.now() - Number(patient.horaDesfechoFinalTs) < 24 * 60 * 60 * 1000;
 }
 
+function isPatientActiveCare(patient = {}) {
+  if (!patient?.id) return true;
+  const finalTerms = ["alta", "alta apos consulta", "transferencia regulada", "transferido", "obito", "evasao", "desistencia", "evasao/desistencia"];
+  const text = normalizeText(`${patient.status || ""} ${patient.desfecho || ""} ${patient.desfechoFinal || ""}`);
+  if (patient.horaDesfechoFinal || patient.horaDesfechoFinalTs) return false;
+  return !finalTerms.some((term) => text.includes(term));
+}
+
 function pacientes() {
   const list = GsiApi.list("pacientes").filter(isPatientOperationalVisible);
   const rows = list.map((p) => [
@@ -590,14 +598,13 @@ function atendimentos() {
       status(a.status),
       escapeHtml(a.espera || "00:00"),
       `<div class="actions queue-actions queue-actions-grid">
-        ${actionButton("Chamar paciente", "call-patient", a.pacienteId || "", `data-nome="${escapeHtml(patient?.nome || a.paciente || "")}"`, "queue-action queue-action-primary")}
-        ${actionButton("Solicitar exame", "open-exam-request", a.pacienteId || "", "", "queue-action")}
-        ${actionButton("Prescrever medicação", "open-prescription", a.pacienteId || "", "", "queue-action")}
+        ${actionButton("Ver prontuário", "view-patient", a.pacienteId || "", "", "queue-action queue-action-primary")}
+        ${actionButton("Ir para etapa", "go-to-stage", a.pacienteId || "", "", "queue-action")}
       </div>`
     ];
   });
   return `
-    ${pageHead("Atendimentos", "Fila assistencial com ações simuladas para chamada, exame e prescrição.")}
+    ${pageHead("Atendimentos", "Fila assistencial para acompanhamento e direcionamento do fluxo.")}
     <section class="panel section-gap queue-panel queue-panel-waiting">
       <h2>Fila de atendimentos <span class="queue-count">${list.length}</span></h2>
       ${list.length
@@ -605,6 +612,112 @@ function atendimentos() {
         : '<p class="muted">Nenhum atendimento registrado no momento.</p>'}
     </section>
   `;
+}
+
+function atendimentosOperational() {
+  const list = GsiApi.list("atendimentos").filter((a) => isPatientActiveCare(patientById(a.pacienteId)));
+  const rows = list.map((a) => {
+    const patient = patientById(a.pacienteId);
+    const stage = atendimentoStageInfo(a, patient);
+    return [
+      `${escapeHtml(patient?.nome || a.paciente || "Paciente fictício")}${a.motivo ? `<br><span class="muted">${escapeHtml(a.motivo)}</span>` : ""}`,
+      escapeHtml(a.chegada || patient?.horaChegada || "Sem registro"),
+      tag(patient?.classificacao),
+      escapeHtml(stage.label),
+      status(patient?.status || a.status),
+      escapeHtml(stage.timeInStage),
+      escapeHtml(stage.totalStay),
+      escapeHtml(stage.responsible),
+      `<div class="actions queue-actions queue-actions-grid">
+        ${actionButton("Ver prontuário", "view-patient", a.pacienteId || "", "", "queue-action queue-action-primary")}
+        ${actionButton("Ir para etapa", "go-to-stage", a.pacienteId || "", `data-page="${stage.page}"`, "queue-action")}
+      </div>`
+    ];
+  });
+  return `
+    ${pageHead("Atendimentos", "Central operacional para acompanhamento dos atendimentos ativos e direcionamento aos módulos assistenciais.")}
+    <section class="panel section-gap queue-panel queue-panel-waiting">
+      <h2>Atendimentos ativos <span class="queue-count">${list.length}</span></h2>
+      ${list.length
+        ? `<div class="queue-table care-table">${table(["Paciente", "Chegada", "Risco", "Etapa atual", "Status atual", "Tempo na etapa", "Permanência total", "Responsável/setor", "Ação"], rows)}</div>`
+        : '<p class="muted">Nenhum atendimento registrado no momento.</p>'}
+    </section>
+  `;
+}
+
+function atendimentoStageInfo(atendimento = {}, patient = {}) {
+  const safePatient = patient || {};
+  const statusText = `${safePatient.status || ""} ${safePatient.desfecho || ""} ${atendimento.status || ""}`;
+  const normalized = normalizeText(statusText);
+  const transfer = GsiApi.list("transferencias").find((item) => item.pacienteId === safePatient.id && isTransferInProgress(item));
+  let label = safePatient.status || atendimento.status || "Em acompanhamento";
+  let page = "pacientes";
+  let startTs = safePatient.horaChegadaTs;
+  let startClock = safePatient.horaChegada || atendimento.chegada || "";
+
+  if (transfer) {
+    label = "Transferência em andamento";
+    page = "transferencias";
+    startTs = transfer.horaSolicitacaoTransferenciaTs || startTs;
+    startClock = transfer.horaSolicitacaoTransferencia || transfer.horario || startClock;
+  } else if (safePatient.estabilizacao || normalized.includes("estabilizacao")) {
+    label = "Sala de Estabilização";
+    page = "estabilizacao";
+    startTs = safePatient.estabilizacao?.inicioTimestamp || startTs;
+    startClock = safePatient.estabilizacao?.inicio || startClock;
+  } else if (safePatient.observacaoObstetrica || normalized.includes("obstetr")) {
+    label = "Observação obstétrica";
+    page = "observacao-obstetrica";
+    startTs = safePatient.observacaoObstetrica?.inicioTimestamp || startTs;
+    startClock = safePatient.observacaoObstetrica?.inicio || startClock;
+  } else if (safePatient.observacaoPediatrica || normalized.includes("pediatr")) {
+    label = "Observação pediátrica";
+    page = "observacao-pediatrica";
+    startTs = safePatient.observacaoPediatrica?.inicioTimestamp || startTs;
+    startClock = safePatient.observacaoPediatrica?.inicio || startClock;
+  } else if (safePatient.observacaoClinica || normalized.includes("observacao")) {
+    label = "Observação clínica";
+    page = "observacao-clinica";
+    startTs = safePatient.observacaoClinica?.inicioTimestamp || startTs;
+    startClock = safePatient.observacaoClinica?.inicio || startClock;
+  } else if (normalized.includes("enferm") || normalized.includes("medicacao")) {
+    label = "Enfermagem/medicação";
+    page = "enfermagem";
+  } else if (normalized.includes("consulta")) {
+    label = normalized.includes("aguardando") ? "Aguardando consulta" : "Em consulta";
+    page = "consulta";
+    startTs = safePatient.horaInicioConsultaTs || safePatient.horaFimTriagemTs || startTs;
+    startClock = safePatient.horaInicioConsulta || safePatient.horaFimTriagem || startClock;
+  } else if (normalized.includes("triagem")) {
+    label = normalized.includes("aguardando") ? "Aguardando triagem" : "Em triagem";
+    page = "triagem";
+    startTs = safePatient.horaInicioTriagemTs || startTs;
+    startClock = safePatient.horaInicioTriagem || startClock;
+  }
+
+  const chegada = safePatient.horaChegada || atendimento.chegada || "";
+  return {
+    label,
+    page,
+    timeInStage: formatWaitTime(startTs, startClock),
+    totalStay: safePatient.horaChegadaTs || chegada ? totalStayValue(safePatient, chegada, safePatient.horaDesfechoFinal || safePatient.horaDesfecho || "") : "Sem registro",
+    responsible: atendimento.profissional || safePatient.profissionalResponsavel || stageResponsible(page)
+  };
+}
+
+function stageResponsible(page = "") {
+  const labels = {
+    triagem: "Triagem",
+    consulta: "Consulta",
+    enfermagem: "Enfermagem",
+    "observacao-clinica": "Observação Clínica",
+    "observacao-pediatrica": "Observação Pediátrica",
+    "observacao-obstetrica": "Observação Obstétrica",
+    estabilizacao: "Sala de Estabilização",
+    transferencias: "Regulação/Transferências",
+    pacientes: "Equipe de plantão"
+  };
+  return labels[page] || "Equipe de plantão";
 }
 
 function painelChamada() {
@@ -747,8 +860,23 @@ function openTriageModal(patientId) {
   if (!p) return;
   const savedRiskSupport = p.triagemRisco || {};
   const savedVitals = p.sinaisVitais || {};
+  const savedAlerts = savedRiskSupport.alertasClinicos || {};
   const initialValues = {
     queixa: p.queixa || "",
+    profissionalTriagem: savedRiskSupport.profissional || "",
+    categoriaProfissionalTriagem: savedRiskSupport.categoriaProfissional || "",
+    registroProfissionalTriagem: savedRiskSupport.registroProfissional || "",
+    possuiAlergia: savedAlerts.possuiAlergia || "Não informado",
+    alergiasDescricao: savedAlerts.alergiasDescricao || "",
+    usaMedicacaoContinua: savedAlerts.usaMedicacaoContinua || "Não informado",
+    medicamentosUsoContinuo: savedAlerts.medicamentosUsoContinuo || "",
+    possuiComorbidades: savedAlerts.possuiComorbidades || "Não informado",
+    comorbidadesDescricao: savedAlerts.comorbidadesDescricao || "",
+    tratamentoEmAndamento: savedAlerts.tratamentoEmAndamento || "Não informado",
+    tratamentoDescricao: savedAlerts.tratamentoDescricao || "",
+    usouMedicacaoAntes: savedAlerts.usouMedicacaoAntes || "Não informado",
+    medicacaoAntesDescricao: savedAlerts.medicacaoAntesDescricao || "",
+    gestacaoSuspeita: savedAlerts.gestacaoSuspeita || savedRiskSupport.gestante || "Não informado",
     pa: savedVitals.pa || "120/80 mmHg",
     fc: savedVitals.fc || "88 bpm",
     fr: savedVitals.fr || "18 irpm",
@@ -775,7 +903,24 @@ function openTriageModal(patientId) {
       <p class="muted">Ferramenta demonstrativa de apoio à classificação de risco. A decisão final deve ser realizada por profissional habilitado, conforme protocolo institucional validado.</p>
     </section>
     <form id="triageForm" class="form-grid">
+      <p class="field full"><span>Profissional responsável pela triagem</span>Identificação do profissional que confirma a classificação final.</p>
+      ${field("Nome do profissional da triagem", "profissionalTriagem", initialValues.profissionalTriagem)}
+      ${field("Categoria profissional", "categoriaProfissionalTriagem", initialValues.categoriaProfissionalTriagem, "", false, false)}
+      ${field("Registro profissional", "registroProfissionalTriagem", initialValues.registroProfissionalTriagem, "", false, false)}
       ${field("Queixa principal", "queixa", initialValues.queixa, "full")}
+      <p class="field full"><span>Alertas clínicos</span>Dados mínimos para segurança da prescrição e continuidade do cuidado.</p>
+      ${selectField("Possui alergia?", "possuiAlergia", ["Não informado", "Não", "Sim"], initialValues.possuiAlergia)}
+      ${field("Descrição da alergia", "alergiasDescricao", initialValues.alergiasDescricao, "", false, false)}
+      ${selectField("Faz uso de medicação contínua?", "usaMedicacaoContinua", ["Não informado", "Não", "Sim"], initialValues.usaMedicacaoContinua)}
+      ${field("Medicamentos de uso contínuo", "medicamentosUsoContinuo", initialValues.medicamentosUsoContinuo, "full", true, false)}
+      ${selectField("Possui comorbidades?", "possuiComorbidades", ["Não informado", "Não", "Sim"], initialValues.possuiComorbidades)}
+      ${field("Quais comorbidades?", "comorbidadesDescricao", initialValues.comorbidadesDescricao, "full", true, false)}
+      ${selectField("Está em tratamento atualmente?", "tratamentoEmAndamento", ["Não informado", "Não", "Sim"], initialValues.tratamentoEmAndamento)}
+      ${field("Qual tratamento?", "tratamentoDescricao", initialValues.tratamentoDescricao, "full", true, false)}
+      ${selectField("Usou medicação antes de chegar?", "usouMedicacaoAntes", ["Não informado", "Não", "Sim"], initialValues.usouMedicacaoAntes)}
+      ${field("Medicação usada e horário", "medicacaoAntesDescricao", initialValues.medicacaoAntesDescricao, "full", true, false)}
+      ${selectField("Gestação ou suspeita de gestação", "gestacaoSuspeita", ["Não informado", "Não se aplica", "Não", "Sim"], initialValues.gestacaoSuspeita)}
+      <p class="field full"><span>Sinais, sintomas e classificação</span>O sistema sugere; o enfermeiro classifica.</p>
       ${yesNoField("Sinais de gravidade", "sinaisGravidade", initialValues.sinaisGravidade)}
       ${yesNoField("Dor torácica", "dorToracica", initialValues.dorToracica)}
       ${yesNoField("Falta de ar", "faltaAr", initialValues.faltaAr)}
@@ -894,6 +1039,7 @@ function openConductModal(patientId) {
   const p = patientById(patientId);
   if (!p) return;
   openModal("Registrar conduta - " + p.nome, `
+    ${conductClinicalSummary(p)}
     <form id="conductForm" class="form-grid">
       <p class="field full"><span>Paciente</span>${escapeHtml(p.nome)} ${tag(p.classificacao)}</p>
       ${field("Avaliação clínica", "avaliacao", p.conduta?.avaliacao || "", "full", true)}
@@ -910,6 +1056,96 @@ function openConductModal(patientId) {
 const fictionalDoctors = ["Dr. Carlos Menezes", "Dra. Ana Beatriz Lima", "Dr. Rafael Santos", "Outro profissional médico"];
 
 const consultorios = ["Consultório Médico 1", "Consultório Médico 2", "Consultório Médico 3", "Outro"];
+
+function conductClinicalSummary(patient = {}) {
+  const atendimento = firstRelation("atendimentos", patient);
+  const exames = relationByPatient("exames", patient);
+  const prescricoes = relationByPatient("prescricoes", patient);
+  const transferencia = firstRelation("transferencias", patient);
+  const observacoes = observationRecords(patient);
+  const evolucoes = patient.evolucoesEnfermagem || [];
+  const sinais = patient.sinaisVitais || {};
+  const alertasClinicos = clinicalAlertsFromPatient(patient);
+  const inicioConsulta = patient.horaInicioConsulta || atendimento.inicioConsulta || "";
+  const timeline = [];
+
+  addTimelineEvent(timeline, patient.horaChegada || atendimento.chegada, "Ficha aberta", patient.horaChegadaTs);
+  addTimelineEvent(timeline, patient.horaInicioTriagem, "Triagem iniciada", patient.horaInicioTriagemTs);
+  addTimelineEvent(timeline, patient.horaFimTriagem, "Triagem concluída", patient.horaFimTriagemTs);
+  addTimelineEvent(timeline, patient.horaChamadaConsulta, "Paciente chamado", patient.horaChamadaConsultaTs);
+  addTimelineEvent(timeline, inicioConsulta, "Consulta iniciada", patient.horaInicioConsultaTs);
+  exames.forEach((item) => {
+    addTimelineEvent(timeline, item.horario, `Exame solicitado: ${item.exame || item.tipo || "exame"}`);
+    addTimelineEvent(timeline, item.horaColeta, `Exame coletado/realizado: ${item.exame || item.tipo || "exame"}`, item.horaColetaTs);
+    addTimelineEvent(timeline, item.horarioLiberacao, `Resultado liberado: ${item.exame || item.tipo || "exame"}`, item.horarioLiberacaoTs);
+  });
+  prescricoes.forEach((item) => addTimelineEvent(timeline, item.horario, `Medicação prescrita: ${item.medicamento || "medicação"}`));
+  evolucoes.forEach((item) => addTimelineEvent(timeline, item.horario, "Evolução de enfermagem registrada"));
+  observacoes.forEach(([tipo, obs]) => addTimelineEvent(timeline, obs.inicio, `Entrada em ${tipo}`, obs.inicioTimestamp));
+  if (patient.estabilizacao) addTimelineEvent(timeline, patient.estabilizacao.inicio, "Entrada na Sala de Estabilização", patient.estabilizacao.inicioTimestamp);
+  addTimelineEvent(timeline, transferencia.horario || transferencia.horaSolicitacaoTransferencia, "Transferência solicitada", transferencia.horaSolicitacaoTransferenciaTs);
+
+  const assistenciais = [
+    ...exames.map((item) => `<strong>Exame:</strong> ${escapeHtml(recordValue(item.exame || item.tipo))} <span class="muted">(${escapeHtml(recordValue(item.status))})</span>`),
+    ...prescricoes.map((item) => `<strong>Prescrição:</strong> ${escapeHtml(recordValue(item.medicamento))} <span class="muted">${escapeHtml(recordValue(item.status))}</span>`),
+    ...evolucoes.map((item) => `<strong>Enfermagem:</strong> ${escapeHtml(recordValue(item.evolucao || item.procedimentos || item.medicacoes))}`),
+    ...observacoes.map(([tipo, obs]) => `<strong>${escapeHtml(tipo)}:</strong> entrada ${escapeHtml(recordValue(obs.inicio))}`),
+    patient.estabilizacao ? `<strong>Estabilização:</strong> entrada ${escapeHtml(recordValue(patient.estabilizacao.inicio))}` : "",
+    transferencia.id ? `<strong>Transferência:</strong> ${escapeHtml(recordValue(transferencia.status))} para ${escapeHtml(recordValue(transferencia.destino))}` : ""
+  ].filter(Boolean);
+
+  const timelineBody = timeline.length
+    ? `<ul class="list">${timeline.sort((a, b) => eventSortValue(a) - eventSortValue(b)).map((event) => `<li><strong>${escapeHtml(event.time)}</strong> - ${escapeHtml(event.label)}</li>`).join("")}</ul>`
+    : `<p class="muted">${noRecord}</p>`;
+
+  return `
+    <section class="record-block">
+      <h3>Resumo clínico do atendimento atual</h3>
+      <div class="form-grid">
+        ${recordField("Nome", patient.nome)}
+        ${recordField("Idade", calculateAge(patient.nascimento))}
+        ${recordField("Município", municipioUfLabel(patient))}
+        ${recordField("CPF / Cartão SUS", [patient.cpf, patient.sus].filter(Boolean).join(" / "), "full")}
+        ${recordStatusField("Status atual", patient.status)}
+      </div>
+    </section>
+    <section class="record-block">
+      <h3>Alertas clínicos</h3>
+      <div class="form-grid">
+        ${recordField("Alergias", alertasClinicos.alergias)}
+        ${recordField("Comorbidades", alertasClinicos.comorbidades)}
+        ${recordField("Medicamentos de uso contínuo", alertasClinicos.medicamentosUsoContinuo, "full")}
+        ${recordField("Tratamento em andamento", alertasClinicos.tratamentoEmAndamento, "full")}
+        ${recordField("Medicação antes da chegada", alertasClinicos.medicacaoAntesChegada, "full")}
+        ${recordField("Gestação/suspeita", alertasClinicos.gestacao)}
+      </div>
+    </section>
+    <section class="record-block">
+      <h3>Classificação e triagem</h3>
+      <div class="form-grid">
+        ${recordTagField("Classificação de risco", patient.classificacao)}
+        ${recordField("Queixa principal", patient.queixa || atendimento.motivo, "full")}
+        ${recordField("Pressão arterial", sinais.pa)}
+        ${recordField("Frequência cardíaca", sinais.fc)}
+        ${recordField("Frequência respiratória", sinais.fr)}
+        ${recordField("Saturação", sinais.sat)}
+        ${recordField("Temperatura", sinais.temp)}
+        ${recordField("Dor", sinais.dor)}
+        ${recordField("Glicemia", sinais.glicemia)}
+        ${recordField("Observações da triagem", sinais.obs, "full")}
+        ${recordField("Profissional da triagem", patient.triagemRisco?.profissional)}
+      </div>
+    </section>
+    <section class="record-block">
+      <h3>Linha do tempo resumida</h3>
+      ${timelineBody}
+    </section>
+    <section class="record-block">
+      <h3>Dados assistenciais já registrados</h3>
+      ${listItems(assistenciais)}
+    </section>
+  `;
+}
 
 function openCallConsultModal(patientId) {
   const p = patientById(patientId);
@@ -968,21 +1204,51 @@ function openStartConsultModal(patientId) {
 function enfermagem() {
   const riskOrder = { Vermelho: 0, Laranja: 1, Amarelo: 2, Verde: 3, Azul: 4 };
   const inactiveStatus = ["Alta", "Alta da observação", "Cancelado", "Evasão/desistência", "Óbito", "Transferência regulada"];
+  const prescriptions = GsiApi.list("prescricoes");
+  const waitingAdministration = prescriptions.filter((rx) => (rx.statusMedicacao || rx.status) === "Dispensado");
+  const waitingPatientIds = new Set(waitingAdministration.map((rx) => rx.pacienteId).filter(Boolean));
+  const nursingStatuses = ["Em observação clínica", "Em observação pediátrica", "Em observação obstétrica", "Sala de estabilização", "Em enfermagem/medicação", "Medicação e alta"];
   const ativos = GsiApi.list("pacientes")
     .filter((p) => !inactiveStatus.includes(p.status))
+    .filter((p) => nursingStatuses.includes(p.status) || waitingPatientIds.has(p.id) || prescriptions.some((rx) => rx.paciente === p.nome && (rx.statusMedicacao || rx.status) === "Dispensado"))
     .sort((a, b) => (riskOrder[a.classificacao] ?? 9) - (riskOrder[b.classificacao] ?? 9));
 
   const rows = ativos.map((p) => {
     const evolucoes = p.evolucoesEnfermagem || [];
     const ultima = evolucoes.length ? evolucoes[evolucoes.length - 1] : null;
+    const sinais = p.sinaisVitais || {};
+    const alertas = clinicalAlertsFromPatient(p);
+    const rxPatient = prescriptions.filter((rx) => rx.pacienteId === p.id || rx.paciente === p.nome);
+    const rxResumo = rxPatient.length
+      ? rxPatient.map((rx) => `${escapeHtml(medicationDisplayName(rx.medicamento))} (${escapeHtml(displayText(rx.statusMedicacao || rx.status))})`).join("<br>")
+      : "Sem prescrição vinculada";
+    const aguardando = rxPatient.filter((rx) => (rx.statusMedicacao || rx.status) === "Dispensado").length;
     return [
       escapeHtml(p.nome), tag(p.classificacao), status(p.status),
+      escapeHtml(p.queixa || "Sem registro"),
+      escapeHtml([sinais.pa, sinais.fc, sinais.sat].filter(Boolean).join(" | ") || "Sem registro"),
+      escapeHtml(alertas.alergias || "Sem registro"),
+      rxResumo,
+      aguardando ? status(`${aguardando} aguardando administração`) : status("Sem administração pendente"),
       ultima ? `${escapeHtml(ultima.horario)} - ${escapeHtml(ultima.profissional)}` : "Nenhuma ainda",
       `<div class="actions queue-actions queue-actions-grid">
-        ${actionButton("Registrar evolução", "open-nursing-modal", p.id, "", "queue-action queue-action-primary")}
-        ${actionButton("Solicitar exame", "open-exam-request", p.id, 'data-origem="Enfermagem"', "queue-action")}
-        ${actionButton("Prescrever medicação", "open-prescription", p.id, "", "queue-action")}
+        ${actionButton("Ver resumo assistencial", "view-patient", p.id, "", "queue-action")}
+        ${actionButton("Registrar evolução", "open-nursing-evolution-modal", p.id, "", "queue-action queue-action-primary")}
+        ${actionButton("Registrar procedimento/curativo", "open-nursing-procedure-modal", p.id, "", "queue-action")}
+        ${actionButton("Registrar sinais vitais", "open-nursing-vitals-modal", p.id, "", "queue-action")}
       </div>`
+    ];
+  });
+  const adminRows = waitingAdministration.map((rx) => {
+    const p = rx.pacienteId ? patientById(rx.pacienteId) : GsiApi.list("pacientes").find((item) => item.nome === rx.paciente);
+    return [
+      escapeHtml(p?.nome || rx.paciente || "Paciente não vinculado"),
+      escapeHtml(prescriptionOrigin(rx)),
+      escapeHtml(medicationDisplayName(rx.medicamento)),
+      escapeHtml(`${recordValue(rx.dose)} ${recordValue(rx.via)}`),
+      escapeHtml(rx.horaDispensacaoMedicacao || "Sem registro"),
+      status("Aguardando administração"),
+      actionButton("Registrar administração", "open-medication-admin", rx.id, "", "queue-action queue-action-primary")
     ];
   });
 
@@ -991,38 +1257,141 @@ function enfermagem() {
     <section class="grid module-stats">
       ${metric("Pacientes ativos", ativos.length, "Em algum estágio do fluxo", "primary")}
       ${metric("Evoluções registradas", ativos.reduce((total, p) => total + (p.evolucoesEnfermagem?.length || 0), 0), "Total acumulado")}
-      ${metric("Sem evolução ainda", ativos.filter((p) => !p.evolucoesEnfermagem?.length).length, "Pendentes de registro", "warning")}
+      ${metric("Aguardando administração", waitingAdministration.length, "Medicações dispensadas", "warning")}
     </section>
     <section class="panel section-gap queue-panel queue-panel-waiting">
-      <h2>Pacientes ativos <span class="queue-count">${ativos.length}</span></h2>
+      <h2>Pacientes sob cuidado da enfermagem <span class="queue-count">${ativos.length}</span></h2>
       ${rows.length
-        ? `<div class="queue-table">${table(["Paciente", "Classificação", "Status", "Última evolução", "Ação"], rows)}</div>`
+        ? `<div class="queue-table">${table(["Paciente", "Classificação", "Setor atual", "Queixa", "Sinais vitais", "Alergias", "Medicações prescritas", "Administração", "Última evolução", "Ação"], rows)}</div>`
         : '<p class="muted">Nenhum paciente ativo no momento.</p>'}
+    </section>
+    <section class="panel section-gap queue-panel queue-panel-active">
+      <h2>Medicações aguardando administração <span class="queue-count">${adminRows.length}</span></h2>
+      ${adminRows.length
+        ? `<div class="queue-table">${table(["Paciente", "Setor/origem", "Medicação", "Dose/via", "Dispensação", "Status", "Ação"], adminRows)}</div>`
+        : '<p class="muted">Nenhuma medicação dispensada aguardando administração.</p>'}
     </section>
   `;
 }
 
-function openNursingModal(patientId) {
+function setupOtherProfessional(formId, selectName, fieldId) {
+  const form = byId(formId);
+  const select = form.querySelector(`select[name="${selectName}"]`);
+  const otherField = byId(fieldId);
+  const otherInput = otherField.querySelector("input");
+  select.addEventListener("change", () => {
+    const isOther = select.value === "Outro profissional";
+    otherField.style.display = isOther ? "" : "none";
+    otherInput.required = isOther;
+  });
+}
+
+function nursingProfessional(values = {}) {
+  return values.profissional === "Outro profissional" ? (values.profissionalOutro || "").trim() || "Profissional de enfermagem" : values.profissional;
+}
+
+function openNursingEvolutionModal(patientId) {
   const p = patientById(patientId);
   if (!p) return;
-  openModal("Registrar evolução - " + p.nome, `
-    <form id="nursingForm" class="form-grid">
-      ${field("Procedimentos realizados", "procedimentos", "", "full", true)}
-      ${field("Medicações administradas", "medicacoes", "", "full", true)}
-      ${field("Curativos", "curativos", "", "full", false, false)}
-      ${field("Evolução de enfermagem", "evolucao", "", "full", true)}
-      ${field("Sinais vitais", "sinais", "", "full", true)}
+  openModal("Registrar evolução de enfermagem - " + p.nome, `
+    <form id="nursingEvolutionForm" class="form-grid">
+      ${recordField("Data/hora", nowTime())}
+      ${recordField("Setor atual", p.status)}
       ${selectField("Profissional responsável", "profissional", ["Enf. Joana Matos", "Enf. Paula Santos", "Tec. Erick Gomes", "Outro profissional"])}
-      <label class="field full" id="otherNursingProfField" style="display:none">
+      <label class="field full" id="otherNursingEvolutionProfField" style="display:none">
+        <span>Nome do profissional</span>
+        <input name="profissionalOutro" placeholder="Digite o nome">
+      </label>
+      ${selectField("Estado geral do paciente", "estadoGeral", ["Estável", "Regular", "Instável", "Melhora clínica", "Piora clínica"])}
+      ${field("Relato/queixa no momento", "relato", p.queixa || "", "full", true, false)}
+      ${field("Achados observados", "achados", "", "full", true)}
+      ${field("Conduta/ação de enfermagem", "acaoEnfermagem", "", "full", true)}
+      ${field("Orientações realizadas", "orientacoes", "", "full", true, false)}
+      ${field("Intercorrências", "intercorrencias", "", "full", true, false)}
+      ${selectField("Necessidade de reavaliação", "necessitaReavaliacao", ["Não", "Sim"])}
+      ${field("Evolução narrativa", "evolucao", "", "full", true)}
+    </form>
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-nursing-evolution" data-id="${p.id}">Salvar evolução</button>`);
+
+  setupOtherProfessional("nursingEvolutionForm", "profissional", "otherNursingEvolutionProfField");
+}
+
+function openNursingVitalsModal(patientId) {
+  const p = patientById(patientId);
+  if (!p) return;
+  const sinais = p.sinaisVitais || {};
+  openModal("Registrar sinais vitais - " + p.nome, `
+    <form id="nursingVitalsForm" class="form-grid">
+      ${recordField("Horário da aferição", nowTime())}
+      ${field("Pressão arterial", "pa", sinais.pa || "")}
+      ${field("Frequência cardíaca", "fc", sinais.fc || "")}
+      ${field("Frequência respiratória", "fr", sinais.fr || "")}
+      ${field("Temperatura", "temp", sinais.temp || "")}
+      ${field("Saturação", "sat", sinais.sat || "")}
+      ${field("Glicemia, se aplicável", "glicemia", sinais.glicemia || "", "", false, false)}
+      ${field("Dor de 0 a 10", "dor", sinais.dor || "")}
+      ${field("Nível de consciência", "nivelConsciencia", "", "", false, false)}
+      ${field("Observação curta", "observacao", "", "full", true, false)}
+      ${selectField("Profissional responsável", "profissional", ["Enf. Joana Matos", "Enf. Paula Santos", "Tec. Erick Gomes", "Outro profissional"])}
+      <label class="field full" id="otherNursingVitalsProfField" style="display:none">
         <span>Nome do profissional</span>
         <input name="profissionalOutro" placeholder="Digite o nome">
       </label>
     </form>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-nursing-evolution" data-id="${p.id}">Salvar evolucao</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-nursing-vitals" data-id="${p.id}">Salvar sinais vitais</button>`);
 
-  const form = byId("nursingForm");
+  setupOtherProfessional("nursingVitalsForm", "profissional", "otherNursingVitalsProfField");
+}
+
+function openNursingProcedureModal(patientId) {
+  const p = patientById(patientId);
+  if (!p) return;
+  openModal("Registrar procedimento/curativo - " + p.nome, `
+    <form id="nursingProcedureForm" class="form-grid">
+      ${recordField("Horário do procedimento", nowTime())}
+      ${selectField("Tipo de procedimento", "tipoProcedimento", ["Curativo", "Punção venosa", "Retirada de acesso", "Higiene/conforto", "Coleta", "Outro"])}
+      ${field("Local/região", "localRegiao", "")}
+      ${field("Material utilizado", "materialUtilizado", "", "full", true)}
+      ${field("Técnica/descrição do procedimento", "descricaoProcedimento", "", "full", true)}
+      ${field("Aspecto da lesão/curativo", "aspecto", "", "full", true, false)}
+      ${field("Intercorrências", "intercorrencias", "", "full", true, false)}
+      ${field("Resultado/observação", "resultado", "", "full", true)}
+      ${selectField("Necessidade de reavaliação", "necessitaReavaliacao", ["Não", "Sim"])}
+      ${selectField("Profissional responsável", "profissional", ["Enf. Joana Matos", "Enf. Paula Santos", "Tec. Erick Gomes", "Outro profissional"])}
+      <label class="field full" id="otherNursingProcedureProfField" style="display:none">
+        <span>Nome do profissional</span>
+        <input name="profissionalOutro" placeholder="Digite o nome">
+      </label>
+    </form>
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-nursing-procedure" data-id="${p.id}">Salvar procedimento</button>`);
+
+  setupOtherProfessional("nursingProcedureForm", "profissional", "otherNursingProcedureProfField");
+}
+
+function openMedicationAdministrationModal(prescriptionId) {
+  const rx = GsiApi.list("prescricoes").find((item) => item.id === prescriptionId);
+  if (!rx) return;
+  openModal("Registrar administração de medicação", `
+    <form id="medicationAdminForm" class="form-grid">
+      ${recordField("Paciente", rx.paciente)}
+      ${recordField("Medicação", medicationDisplayName(rx.medicamento))}
+      ${recordField("Dose/via", `${recordValue(rx.dose)} ${recordValue(rx.via)}`)}
+      ${recordField("Setor/origem", prescriptionOrigin(rx))}
+      ${recordField("Dispensação", rx.horaDispensacaoMedicacao)}
+      ${selectField("Status da administração", "statusAdministracao", ["Administrada", "Recusada", "Suspensa", "Não administrada"])}
+      ${field("Motivo, se não administrada", "motivoNaoAdministracao", "", "full", true, false)}
+      ${selectField("Profissional responsável", "profissional", ["Enf. Joana Matos", "Enf. Paula Santos", "Tec. Erick Gomes", "Outro profissional"])}
+      <label class="field full" id="otherMedicationAdminProfField" style="display:none">
+        <span>Nome do profissional</span>
+        <input name="profissionalOutro" placeholder="Digite o nome">
+      </label>
+      ${field("Observações", "observacaoAdministracao", "", "full", true, false)}
+    </form>
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-medication-admin" data-id="${rx.id}">Registrar administração</button>`);
+
+  const form = byId("medicationAdminForm");
   const select = form.querySelector('select[name="profissional"]');
-  const otherField = byId("otherNursingProfField");
+  const otherField = byId("otherMedicationAdminProfField");
   const otherInput = otherField.querySelector("input");
   select.addEventListener("change", () => {
     const isOther = select.value === "Outro profissional";
@@ -1032,8 +1401,12 @@ function openNursingModal(patientId) {
 }
 
 function farmacia() {
-  const rows = GsiApi.list("prescricoes").map((p) => [
-    escapeHtml(p.paciente), escapeHtml(p.medicamento), escapeHtml(p.dose), escapeHtml(p.via), escapeHtml(p.horario), escapeHtml(p.prescritor), status(p.status),
+  const pendingStatuses = ["Pendente", "Solicitado", "Aguardando separação", "Separado", "Em falta"];
+  const prescriptions = GsiApi.list("prescricoes");
+  const pendingPrescriptions = prescriptions.filter((p) => pendingStatuses.includes(p.statusMedicacao || p.status));
+  const dispensedPrescriptions = prescriptions.filter((p) => (p.statusMedicacao || p.status) === "Dispensado");
+  const pendingRows = pendingPrescriptions.map((p) => [
+    escapeHtml(p.paciente), escapeHtml(medicationDisplayName(p.medicamento)), escapeHtml(p.dose), escapeHtml(p.via), escapeHtml(p.horario), escapeHtml(prescriptionOrigin(p)), escapeHtml(p.prescritor), status(p.statusMedicacao || p.status),
     `<div class="actions queue-actions queue-actions-grid">
       ${actionButton("Dispensar", "rx-status", p.id, 'data-status="Dispensado"', "queue-action queue-action-primary")}
       ${actionButton("Separar", "rx-status", p.id, 'data-status="Separado"', "queue-action")}
@@ -1041,22 +1414,37 @@ function farmacia() {
       ${actionButton("Solicitar reposição", "request-restock", p.id, `data-nome="${escapeHtml(p.medicamento)}"`, "queue-action")}
     </div>`
   ]);
+  const dispensedRows = dispensedPrescriptions.map((p) => [
+    escapeHtml(p.paciente), escapeHtml(medicationDisplayName(p.medicamento)), escapeHtml(p.dose), escapeHtml(p.via), escapeHtml(p.horario), escapeHtml(prescriptionOrigin(p)),
+    escapeHtml(p.prescritor), escapeHtml(p.horaDispensacaoMedicacao || "Sem registro"), status("Dispensado"),
+    `<div class="actions queue-actions queue-actions-grid">
+      ${actionButton("Ver registro", "view-rx-record", p.id, "", "queue-action queue-action-primary")}
+    </div>`
+  ]);
   const stock = GsiApi.list("estoque");
   const stockRows = stock.map((s) => [escapeHtml(s.nome), escapeHtml(s.quantidade), escapeHtml(s.minimo), status(s.situacao), escapeHtml(s.validade), escapeHtml(s.local)]);
   return `
     ${pageHead("Farmácia", "Controle demonstrativo de prescrições, dispensação, estoque crítico e solicitações urgentes.")}
     <section class="grid module-stats">
-      ${metric("Prescrições pendentes", GsiApi.list("prescricoes").filter((p) => p.status === "Pendente").length, "Aguardando análise", "warning")}
-      ${metric("Medicamentos dispensados hoje", GsiApi.list("prescricoes").filter((p) => p.status === "Dispensado").length + 96, "Até o momento", "primary")}
+      ${metric("Prescrições pendentes", pendingPrescriptions.length, "Aguardando dispensação", "warning")}
+      ${metric("Medicamentos dispensados hoje", dispensedPrescriptions.length, "Até o momento", "primary")}
       ${metric("Itens com estoque crítico", String(stock.filter((s) => s.situacao === "Critico").length).padStart(2, "0"), "Reposição necessária", "danger")}
       ${metric("Solicitações urgentes", "04", "Sala de Estabilização")}
     </section>
     <section class="grid two-column section-gap">
       <div class="panel wide-panel queue-panel queue-panel-waiting">
-        <h2>Prescrições pendentes <span class="queue-count">${rows.length}</span></h2>
-        <div class="queue-table">${table(["Paciente", "Medicamento", "Dose", "Via", "Horário", "Prescritor", "Status", "Ação"], rows)}</div>
+        <h2>Prescrições pendentes de dispensação <span class="queue-count">${pendingRows.length}</span></h2>
+        ${pendingRows.length
+          ? `<div class="queue-table">${table(["Paciente", "Medicamento", "Dose", "Via", "Horário", "Setor/origem", "Prescritor", "Status", "Ação"], pendingRows)}</div>`
+          : '<p class="muted">Nenhuma prescrição pendente de dispensação.</p>'}
       </div>
       <div class="panel"><h2>Alertas de farmácia</h2><ul class="list alert-list"><li>Medicamentos com estoque crítico.</li><li>Medicamentos próximos do vencimento.</li><li>Prescrições sem dispensação.</li><li>Itens de emergência para sala de estabilização.</li></ul></div>
+    </section>
+    <section class="panel section-gap queue-panel queue-panel-active">
+      <h2>Medicações dispensadas <span class="queue-count">${dispensedRows.length}</span></h2>
+      ${dispensedRows.length
+        ? `<div class="queue-table">${table(["Paciente", "Medicamento", "Dose", "Via", "Horário", "Setor/origem", "Prescritor", "Hora da dispensação", "Status", "Ação"], dispensedRows)}</div>`
+        : '<p class="muted">Nenhuma medicação dispensada registrada.</p>'}
     </section>
     <section class="panel section-gap">
       <div class="page-head" style="margin-bottom:14px">
@@ -1079,13 +1467,57 @@ function examActions(e) {
   return `<div class="actions queue-actions queue-actions-grid">${buttons.join("")}</div>`;
 }
 
+const validExamOrigins = ["Consulta Médica", "Observação Clínica", "Observação Pediátrica", "Observação Obstétrica", "Sala de Estabilização", "Transferência"];
+
+function inferExamOrigin(patient = {}) {
+  const text = [patient.status, patient.desfecho].filter(Boolean).join(" ");
+  if (patient.estabilizacao || text.includes("estabiliza")) return "Sala de Estabilização";
+  if (patient.observacaoPediatrica || text.includes("observação pedi")) return "Observação Pediátrica";
+  if (patient.observacaoObstetrica || text.includes("observação obst")) return "Observação Obstétrica";
+  if (patient.observacaoClinica || text.includes("observação cl")) return "Observação Clínica";
+  if (text.includes("Transfer")) return "Transferência";
+  return "Consulta Médica";
+}
+
+function examCareOrigin(exam = {}, patient = null) {
+  const origem = displayText(exam.origem || "").trim();
+  if (validExamOrigins.includes(origem)) return origem;
+  return inferExamOrigin(patient || patientById(exam.pacienteId) || {});
+}
+
+function medicationCareOrigin(patient = {}) {
+  const text = [patient.status, patient.desfecho].filter(Boolean).join(" ");
+  if (patient.estabilizacao || text.includes("estabiliza")) return "Sala de Estabilização";
+  if (patient.observacaoPediatrica || text.includes("observação pedi")) return "Observação Pediátrica";
+  if (patient.observacaoObstetrica || text.includes("observação obst")) return "Observação Obstétrica";
+  if (patient.observacaoClinica || text.includes("observação cl")) return "Observação Clínica";
+  if (text.includes("enfermagem") || text.includes("medicação")) return "Enfermagem/Medicação";
+  return "Consulta Médica";
+}
+
+function prescriptionOrigin(prescription = {}) {
+  const origem = displayText(prescription.origem || prescription.setorOrigem || "").trim();
+  if (origem && origem !== "Não informado" && origem !== "Atendimentos") return origem;
+  const patient = prescription.pacienteId ? patientById(prescription.pacienteId) : GsiApi.list("pacientes").find((p) => p.nome === prescription.paciente);
+  return medicationCareOrigin(patient || {});
+}
+
+function medicationDisplayName(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "Medicação não especificada";
+  const letters = (text.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+  const vowels = (text.match(/[aeiouáéíóúâêôãõàü]/gi) || []).length;
+  if (text.length >= 8 && letters >= 8 && vowels / Math.max(letters, 1) < 0.18) return "Medicação não especificada";
+  return text;
+}
+
 function exames() {
   const riskOrder = { Vermelho: 0, Laranja: 1, Amarelo: 2, Verde: 3, Azul: 4 };
   const statusOrder = { Solicitado: 0, "Em coleta": 1, "Em execucao": 2, "Resultado critico comunicado": 3, "Resultado liberado": 4, Cancelado: 5 };
 
   const list = GsiApi.list("exames").map((e) => {
     const p = e.pacienteId ? patientById(e.pacienteId) : null;
-    return { ...e, _nome: p?.nome || e.paciente || "Paciente não vinculado", _classificacao: p?.classificacao || null };
+    return { ...e, origem: examCareOrigin(e, p), _nome: p?.nome || e.paciente || "Paciente não vinculado", _classificacao: p?.classificacao || null };
   });
 
   const pending = list
@@ -1292,6 +1724,7 @@ function strategicIndicatorRow(indicador, resultado, situacao, base, observacao)
 
 function observationQueueActions(p, modulo, origemLabel, options = {}) {
   const buttons = [actionButton("Registrar reavaliação", "open-observation-reassess-modal", p.id, `data-modulo="${modulo}"`, "queue-action queue-action-primary")];
+  buttons.push(actionButton("Ver resumo assistencial", "view-patient", p.id, "", "queue-action"));
   buttons.push(actionButton("Solicitar exame", "open-exam-request", p.id, `data-origem="${origemLabel}"`, "queue-action"));
   buttons.push(actionButton("Prescrever medicação", "open-prescription", p.id, "", "queue-action"));
   if (options.includeStabilization) buttons.push(actionButton("Encaminhar para estabilização", "route-to-stabilization", p.id, "", "queue-action"));
@@ -1306,6 +1739,38 @@ function observationStatusBadge(patient, modulo) {
   if (examePendente) return '<span class="status warn">Aguardando exame</span>';
   if (!obs.reavaliacoes?.length) return '<span class="status warn">Reavaliação pendente</span>';
   return '<span class="status good">Em acompanhamento</span>';
+}
+
+function observationReassessSummary(patient = {}, modulo = "observacaoClinica") {
+  const obs = patient[modulo] || {};
+  const sinaisLista = patient.sinaisVitaisEnfermagem || [];
+  const ultimosSinais = sinaisLista.length ? sinaisLista[sinaisLista.length - 1] : (patient.sinaisVitais || {});
+  const prescricoes = relationByPatient("prescricoes", patient);
+  const exames = relationByPatient("exames", patient);
+  const reavaliacoes = obs.reavaliacoes || [];
+  const ultimaReavaliacao = reavaliacoes.length ? reavaliacoes[reavaliacoes.length - 1] : null;
+  const tempoObservacao = obs.inicioTimestamp ? formatElapsed(Date.now() - obs.inicioTimestamp) : "";
+  const sinaisTexto = [ultimosSinais.pa, ultimosSinais.fc, ultimosSinais.fr, ultimosSinais.temp, ultimosSinais.sat, ultimosSinais.glicemia, ultimosSinais.dor ? `Dor ${ultimosSinais.dor}` : ""].filter(Boolean).join(" | ");
+  const medicacoes = prescricoes.map((item) => `
+    ${escapeHtml(medicationDisplayName(item.medicamento))} - ${escapeHtml(recordValue(item.statusMedicacao || item.status))}
+    <br><span class="muted">PrescriÃ§Ã£o: ${escapeHtml(recordValue(item.horario))} | DispensaÃ§Ã£o: ${escapeHtml(recordValue(item.horaDispensacaoMedicacao))} | AdministraÃ§Ã£o: ${escapeHtml(recordValue(item.horaAdministracaoMedicacao))}</span>
+  `);
+  const examesResumo = exames.map((item) => `
+    ${escapeHtml(recordValue(item.exame || item.tipo))} - ${escapeHtml(recordValue(item.status))}
+    <br><span class="muted">${escapeHtml(recordValue(examCareOrigin(item, patient)))} | SolicitaÃ§Ã£o: ${escapeHtml(recordValue(item.horario))} | Resultado: ${escapeHtml(recordValue(item.horarioLiberacao))}</span>
+    <br><span class="muted">Laudo: ${escapeHtml(recordValue(item.resultado && item.resultado !== "Pendente" ? item.resultado : ""))}</span>
+  `);
+  return recordSection("Resumo assistencial antes da reavaliaÃ§Ã£o", `
+    <div class="form-grid">
+      ${recordField("Ãšltimos sinais vitais", sinaisTexto, "full")}
+      ${recordField("Tempo em observaÃ§Ã£o", tempoObservacao)}
+      ${recordField("Ãšltima reavaliaÃ§Ã£o", ultimaReavaliacao ? `${recordValue(ultimaReavaliacao.horario)} - ${recordValue(ultimaReavaliacao.profissional)}` : "", "full")}
+    </div>
+    <h4>MedicaÃ§Ãµes</h4>
+    ${listItems(medicacoes)}
+    <h4>Exames</h4>
+    ${listItems(examesResumo)}
+  `);
 }
 
 function observationQueuePage(config) {
@@ -1360,6 +1825,7 @@ function estabilizacao() {
     `<div class="checklist-cell">${checklistBadge(p)}${actionButton("Ver checklist", "open-stabilization-checklist-modal", p.id, "", "queue-action")}</div>`,
     `<div class="actions queue-actions queue-actions-grid">
       ${actionButton("Registrar reavaliação", "open-observation-reassess-modal", p.id, 'data-modulo="estabilizacao"', "queue-action queue-action-primary")}
+      ${actionButton("Ver resumo assistencial", "view-patient", p.id, "", "queue-action")}
       ${actionButton("Solicitar transferência", "open-transfer-request", p.id, "", "queue-action")}
       ${actionButton("Dar alta da observação", "discharge-observation", p.id, "", "danger queue-action")}
     </div>`
@@ -1428,10 +1894,43 @@ function openTransferChecklistModal(transferId) {
   `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="confirm-transfer-checklist" data-id="${transfer.id}">Confirmar checklist</button>`);
 }
 
+function observationReassessSummaryClean(patient = {}, modulo = "observacaoClinica") {
+  const obs = patient[modulo] || {};
+  const sinaisLista = patient.sinaisVitaisEnfermagem || [];
+  const ultimosSinais = sinaisLista.length ? sinaisLista[sinaisLista.length - 1] : (patient.sinaisVitais || {});
+  const prescricoes = relationByPatient("prescricoes", patient);
+  const exames = relationByPatient("exames", patient);
+  const reavaliacoes = obs.reavaliacoes || [];
+  const ultimaReavaliacao = reavaliacoes.length ? reavaliacoes[reavaliacoes.length - 1] : null;
+  const tempoObservacao = obs.inicioTimestamp ? formatElapsed(Date.now() - obs.inicioTimestamp) : "";
+  const sinaisTexto = [ultimosSinais.pa, ultimosSinais.fc, ultimosSinais.fr, ultimosSinais.temp, ultimosSinais.sat, ultimosSinais.glicemia, ultimosSinais.dor ? `Dor ${ultimosSinais.dor}` : ""].filter(Boolean).join(" | ");
+  const medicacoes = prescricoes.map((item) => `
+    ${escapeHtml(medicationDisplayName(item.medicamento))} - ${escapeHtml(recordValue(item.statusMedicacao || item.status))}
+    <br><span class="muted">Prescrição: ${escapeHtml(recordValue(item.horario))} | Dispensação: ${escapeHtml(recordValue(item.horaDispensacaoMedicacao))} | Administração: ${escapeHtml(recordValue(item.horaAdministracaoMedicacao))}</span>
+  `);
+  const examesResumo = exames.map((item) => `
+    ${escapeHtml(recordValue(item.exame || item.tipo))} - ${escapeHtml(recordValue(item.status))}
+    <br><span class="muted">${escapeHtml(recordValue(examCareOrigin(item, patient)))} | Solicitação: ${escapeHtml(recordValue(item.horario))} | Resultado: ${escapeHtml(recordValue(item.horarioLiberacao))}</span>
+    <br><span class="muted">Laudo: ${escapeHtml(recordValue(item.resultado && item.resultado !== "Pendente" ? item.resultado : ""))}</span>
+  `);
+  return recordSection("Resumo assistencial antes da reavaliação", `
+    <div class="form-grid">
+      ${recordField("Últimos sinais vitais", sinaisTexto, "full")}
+      ${recordField("Tempo em observação", tempoObservacao)}
+      ${recordField("Última reavaliação", ultimaReavaliacao ? `${recordValue(ultimaReavaliacao.horario)} - ${recordValue(ultimaReavaliacao.profissional)}` : "", "full")}
+    </div>
+    <h4>Medicações</h4>
+    ${listItems(medicacoes)}
+    <h4>Exames</h4>
+    ${listItems(examesResumo)}
+  `);
+}
+
 function openObservationReassessModal(patientId, modulo = "observacaoClinica") {
   const p = patientById(patientId);
   if (!p) return;
   openModal("Registrar reavaliação - " + p.nome, `
+    ${observationReassessSummaryClean(p, modulo)}
     <form id="observationReassessForm" class="form-grid">
       <input type="hidden" name="modulo" value="${escapeHtml(modulo)}">
       ${field("Pressão arterial", "pa", "120/80 mmHg")}
@@ -2222,7 +2721,7 @@ function configuracoes() {
 const pages = {
   dashboard,
   pacientes,
-  atendimentos,
+  atendimentos: atendimentosOperational,
   "painel-chamada": painelChamada,
   "painel-tv": painelTv,
   risco: classificacao,
@@ -2373,12 +2872,13 @@ function openRiskModal(id) {
   `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="open-triage-modal" data-id="${id}">Iniciar triagem</button>`);
 }
 
-function openExamModal(patientId = "p1", origem = "Atendimentos") {
+function openExamModal(patientId = "p1", origem = "Consulta Médica") {
   const p = patientById(patientId);
+  const examOrigin = examCareOrigin({ origem, pacienteId: patientId }, p);
   openModal("Solicitar exame", `
     <form id="examForm" class="form-grid">
       <input type="hidden" name="pacienteId" value="${escapeHtml(patientId)}">
-      <input type="hidden" name="origem" value="${escapeHtml(origem)}">
+      <input type="hidden" name="origem" value="${escapeHtml(examOrigin)}">
       ${field("Paciente", "paciente", p?.nome || "")}
       ${selectField("Tipo de exame", "tipo", ["Laboratorio", "Raio-X", "ECG", "Ultrassonografia", "Outros"])}
       ${field("Exame solicitado", "exame", "", "full")}
@@ -2390,8 +2890,11 @@ function openExamModal(patientId = "p1", origem = "Atendimentos") {
 
 function openPrescriptionModal(patientId = "p1") {
   const p = patientById(patientId);
+  const origem = medicationCareOrigin(p || {});
   openModal("Prescrever medicação", `
     <form id="prescriptionForm" class="form-grid">
+      <input type="hidden" name="pacienteId" value="${escapeHtml(patientId)}">
+      <input type="hidden" name="origem" value="${escapeHtml(origem)}">
       ${field("Paciente", "paciente", p?.nome || "")}
       ${field("Medicamento", "medicamento")}
       ${field("Dose", "dose")}
@@ -2518,6 +3021,24 @@ function hasAnyRecordValue(...values) {
   return values.some(hasRecordValue);
 }
 
+function clinicalAlertText(alerts = {}, statusKey, descriptionKey) {
+  const description = alerts[descriptionKey];
+  if (hasRecordValue(description)) return description;
+  return alerts[statusKey] || noRecord;
+}
+
+function clinicalAlertsFromPatient(patient = {}) {
+  const alerts = patient.triagemRisco?.alertasClinicos || {};
+  return {
+    alergias: clinicalAlertText({ ...alerts, alergiasDescricao: alerts.alergiasDescricao || patient.alergias }, "possuiAlergia", "alergiasDescricao"),
+    medicamentosUsoContinuo: clinicalAlertText({ ...alerts, medicamentosUsoContinuo: alerts.medicamentosUsoContinuo || patient.medicamentosUsoContinuo }, "usaMedicacaoContinua", "medicamentosUsoContinuo"),
+    comorbidades: clinicalAlertText({ ...alerts, comorbidadesDescricao: alerts.comorbidadesDescricao || patient.comorbidades }, "possuiComorbidades", "comorbidadesDescricao"),
+    tratamentoEmAndamento: clinicalAlertText(alerts, "tratamentoEmAndamento", "tratamentoDescricao"),
+    medicacaoAntesChegada: clinicalAlertText(alerts, "usouMedicacaoAntes", "medicacaoAntesDescricao"),
+    gestacao: alerts.gestacaoSuspeita || patient.triagemRisco?.gestante || noRecord
+  };
+}
+
 function cleanClinicalText(value) {
   const text = String(value || "").trim();
   if (!text) return noRecord;
@@ -2625,6 +3146,8 @@ function openPatientModal(id) {
   const transferencia = firstRelation("transferencias", p);
   const observacoes = observationRecords(p);
   const evolucoes = p.evolucoesEnfermagem || [];
+  const sinaisEnfermagem = p.sinaisVitaisEnfermagem || [];
+  const procedimentosEnfermagem = p.procedimentosEnfermagem || [];
   const stabilizationStatus = p.estabilizacao ? getPatientChecklistStatus(p).label : "";
   const triageJustification = cleanTriageJustification(p.triagemRisco?.justificativaClassificacao);
   const condutaRegistrada = cleanClinicalText(p.conduta?.conduta);
@@ -2637,6 +3160,7 @@ function openPatientModal(id) {
   const hasTriageData = Boolean(p.triagemRisco || p.sinaisVitais || p.horaInicioTriagem || p.horaFimTriagem || p.classificacao);
   const hasConsultData = Boolean(inicioConsulta || p.horaChamadaConsulta || p.conduta);
   const hasTransferData = Boolean(transferencia.id || hasAnyRecordValue(transferencia.status, transferencia.destino, transferencia.checklist, transferencia.horaSaidaTransferencia, transferencia.saida));
+  const alertasClinicos = clinicalAlertsFromPatient(p);
   const timeline = [];
 
   addTimelineEvent(timeline, chegada, "Ficha aberta", p.horaChegadaTs);
@@ -2646,10 +3170,17 @@ function openPatientModal(id) {
   addTimelineEvent(timeline, inicioConsulta, "Consulta iniciada", p.horaInicioConsultaTs);
   addTimelineEvent(timeline, p.horaConduta, "Conduta médica registrada", p.horaCondutaTs);
   evolucoes.forEach((item) => addTimelineEvent(timeline, item.horario, "Evolução de enfermagem registrada"));
-  prescricoes.forEach((item) => addTimelineEvent(timeline, item.horario, `Prescrição: ${item.medicamento || "medicação"}`));
+  sinaisEnfermagem.forEach((item) => addTimelineEvent(timeline, item.horario, "Sinais vitais registrados pela enfermagem", item.horarioTs));
+  procedimentosEnfermagem.forEach((item) => addTimelineEvent(timeline, item.horario, "Procedimento/curativo registrado", item.horarioTs));
+  prescricoes.forEach((item) => {
+    addTimelineEvent(timeline, item.horario, `Prescrição: ${item.medicamento || "medicação"}`);
+    addTimelineEvent(timeline, item.horaDispensacaoMedicacao, `Medicação dispensada: ${item.medicamento || "medicação"}`, item.horaDispensacaoMedicacaoTs);
+    addTimelineEvent(timeline, item.horaAdministracaoMedicacao, `Medicação administrada: ${item.medicamento || "medicação"}`, item.horaAdministracaoMedicacaoTs);
+  });
   exames.forEach((item) => {
     addTimelineEvent(timeline, item.horario, `Exame solicitado: ${item.exame || item.tipo || "exame"}`);
-    addTimelineEvent(timeline, item.horarioLiberacao, `Resultado liberado: ${item.exame || item.tipo || "exame"}`);
+    addTimelineEvent(timeline, item.horaColeta, `Exame coletado/realizado: ${item.exame || item.tipo || "exame"}`, item.horaColetaTs);
+    addTimelineEvent(timeline, item.horarioLiberacao, `Resultado liberado: ${item.exame || item.tipo || "exame"}`, item.horarioLiberacaoTs);
   });
   observacoes.forEach(([tipo, obs]) => {
     addTimelineEvent(timeline, obs.inicio, `Entrada em ${tipo}`, obs.inicioTimestamp);
@@ -2678,22 +3209,50 @@ function openPatientModal(id) {
     </div>
   ` : "";
 
-  const enfermagemBody = evolucoes.length ? recordSection("Enfermagem/medicação", listItems(evolucoes.map((item) => `
-    <strong>${escapeHtml(recordValue(item.horario))}</strong> -
-    ${escapeHtml(recordValue(item.evolucao || item.procedimentos || item.medicacoes))}
-    <br><span class="muted">${escapeHtml(recordValue(item.profissional))}</span>
-  `))) : "";
+  const alertasClinicosBody = `
+    <div class="form-grid">
+      ${recordField("Alergias", alertasClinicos.alergias)}
+      ${recordField("Medicamentos de uso contínuo", alertasClinicos.medicamentosUsoContinuo, "full")}
+      ${recordField("Comorbidades", alertasClinicos.comorbidades, "full")}
+      ${recordField("Tratamento em andamento", alertasClinicos.tratamentoEmAndamento, "full")}
+      ${recordField("Medicação antes da chegada", alertasClinicos.medicacaoAntesChegada, "full")}
+      ${recordField("Gestação/suspeita", alertasClinicos.gestacao)}
+    </div>
+  `;
+
+  const enfermagemRegistros = [
+    ...evolucoes.map((item) => `
+      <strong>${escapeHtml(recordValue(item.horario))}</strong> - Evolução
+      <br>${escapeHtml(recordValue(item.evolucao || item.narrativa || item.acaoEnfermagem))}
+      <br><span class="muted">${escapeHtml(recordValue(item.profissional))}${item.estadoGeral ? ` | ${escapeHtml(recordValue(item.estadoGeral))}` : ""}</span>
+    `),
+    ...sinaisEnfermagem.map((item) => `
+      <strong>${escapeHtml(recordValue(item.horario))}</strong> - Sinais vitais
+      <br>${escapeHtml([item.pa, item.fc, item.fr, item.temp, item.sat, item.glicemia, item.dor ? `Dor ${item.dor}` : ""].filter(Boolean).join(" | ") || noRecord)}
+      <br><span class="muted">${escapeHtml(recordValue(item.profissional))}${item.observacao ? ` | ${escapeHtml(recordValue(item.observacao))}` : ""}</span>
+    `),
+    ...procedimentosEnfermagem.map((item) => `
+      <strong>${escapeHtml(recordValue(item.horario))}</strong> - ${escapeHtml(recordValue(item.tipoProcedimento))}
+      <br>${escapeHtml(recordValue(item.descricaoProcedimento || item.resultado))}
+      <br><span class="muted">${escapeHtml(recordValue(item.profissional))}${item.localRegiao ? ` | ${escapeHtml(recordValue(item.localRegiao))}` : ""}</span>
+    `)
+  ];
+  const enfermagemBody = enfermagemRegistros.length ? recordSection("Enfermagem/medicação", listItems(enfermagemRegistros)) : "";
 
   const farmaciaBody = prescricoes.length ? recordSection("Farmácia", listItems(prescricoes.map((item) => `
-    <strong>${escapeHtml(recordValue(item.medicamento))}</strong> -
+    <strong>${escapeHtml(recordValue(medicationDisplayName(item.medicamento)))}</strong> - 
     ${escapeHtml(recordValue(item.dose))} ${escapeHtml(recordValue(item.via))}
-    <br><span class="muted">${escapeHtml(recordValue(item.status))} | ${escapeHtml(recordValue(item.horario))} | ${escapeHtml(recordValue(item.prescritor))}</span>
+    <br><span class="muted">${escapeHtml(recordValue(item.statusMedicacao || item.status))} | Prescrição: ${escapeHtml(recordValue(item.horario))} | Dispensação: ${escapeHtml(recordValue(item.horaDispensacaoMedicacao))} | Administração: ${escapeHtml(recordValue(item.horaAdministracaoMedicacao))} | ${escapeHtml(recordValue(prescriptionOrigin(item)))} | ${escapeHtml(recordValue(item.prescritor))}</span>
+    ${item.profissionalAdministracao ? `<br><span class="muted">Administrada por ${escapeHtml(recordValue(item.profissionalAdministracao))}${item.observacaoAdministracao ? ` | ${escapeHtml(recordValue(item.observacaoAdministracao))}` : ""}</span>` : ""}
   `))) : "";
 
   const examesBody = exames.length ? recordSection("Exames", listItems(exames.map((item) => `
     <strong>${escapeHtml(recordValue(item.exame || item.tipo))}</strong> -
     ${escapeHtml(recordValue(item.status))}
-    <br><span class="muted">${escapeHtml(recordValue(item.horario))} | Resultado: ${escapeHtml(recordValue(item.resultado))}${item.critico ? " | Resultado crítico comunicado" : ""}</span>
+    <br><span class="muted">Origem: ${escapeHtml(recordValue(examCareOrigin(item, p)))} | Solicitante: ${escapeHtml(recordValue(item.solicitante))} | Solicitação: ${escapeHtml(recordValue(item.horario))}</span>
+    <br><span class="muted">Coleta/realização: ${escapeHtml(recordValue(item.horaColeta))} | Resultado: ${escapeHtml(recordValue(item.horarioLiberacao))} | ${item.critico ? "Resultado crítico comunicado" : "Sem alerta crítico"}</span>
+    <br>Laudo: ${escapeHtml(recordValue(item.resultado && item.resultado !== "Pendente" ? item.resultado : ""))}
+    ${item.observacoes ? `<br><span class="muted">Observações: ${escapeHtml(recordValue(item.observacoes))}</span>` : ""}
   `))) : "";
 
   const observacaoBody = observacoes.length ? recordSection("Observação", observacoes.map(([tipo, obs]) => `
@@ -2758,8 +3317,12 @@ function openPatientModal(id) {
         ${optionalRecordField("Início da triagem", p.horaInicioTriagem)}
         ${optionalRecordField("Fim da triagem", p.horaFimTriagem)}
         ${optionalRecordField("Profissional da triagem", p.triagemRisco?.profissional)}
+        ${optionalRecordField("Categoria profissional", p.triagemRisco?.categoriaProfissional)}
+        ${optionalRecordField("Registro profissional", p.triagemRisco?.registroProfissional)}
         ${recordField("Justificativa", triageJustification, "full")}
       </div>
+      <h3>Alertas clínicos</h3>
+      ${alertasClinicosBody}
       ${sinaisBody}
     `) : ""}
     ${hasConsultData ? recordSection("Consulta médica", `
@@ -2873,7 +3436,24 @@ function handleAction(action, button) {
     if (!requireForm(form)) return;
     const values = formValues(form);
     const sinaisVitais = { pa: values.pa, fc: values.fc, fr: values.fr, sat: values.sat, temp: values.temp, glicemia: values.glicemia, dor: values.dor, obs: values.obs };
+    const alertasClinicos = {
+      possuiAlergia: values.possuiAlergia,
+      alergiasDescricao: values.alergiasDescricao,
+      usaMedicacaoContinua: values.usaMedicacaoContinua,
+      medicamentosUsoContinuo: values.medicamentosUsoContinuo,
+      possuiComorbidades: values.possuiComorbidades,
+      comorbidadesDescricao: values.comorbidadesDescricao,
+      tratamentoEmAndamento: values.tratamentoEmAndamento,
+      tratamentoDescricao: values.tratamentoDescricao,
+      usouMedicacaoAntes: values.usouMedicacaoAntes,
+      medicacaoAntesDescricao: values.medicacaoAntesDescricao,
+      gestacaoSuspeita: values.gestacaoSuspeita
+    };
     const triagemRisco = {
+      profissional: values.profissionalTriagem,
+      categoriaProfissional: values.categoriaProfissionalTriagem,
+      registroProfissional: values.registroProfissionalTriagem,
+      alertasClinicos,
       sinaisGravidade: values.sinaisGravidade,
       dorToracica: values.dorToracica,
       faltaAr: values.faltaAr,
@@ -2901,7 +3481,7 @@ function handleAction(action, button) {
     closeModal();
     return renderPage("triagem");
   }
-  if (action === "open-exam-request") return openExamModal(id || "p1", button.dataset.origem || "Atendimentos");
+  if (action === "open-exam-request") return openExamModal(id || "p1", button.dataset.origem || "Consulta Médica");
   if (action === "open-prescription") return openPrescriptionModal(id || "p1");
   if (action === "open-transfer-request") return openTransferModal(id || "p1");
   if (action === "call-to-triage") {
@@ -3033,7 +3613,9 @@ function handleAction(action, button) {
   if (action === "save-exam") {
     const form = byId("examForm");
     if (!requireForm(form)) return;
-    GsiApi.create("exames", { ...formValues(form), horario: nowTime(), status: "Solicitado", resultado: "Pendente" });
+    const values = formValues(form);
+    const patient = patientById(values.pacienteId);
+    GsiApi.create("exames", { ...values, origem: examCareOrigin(values, patient), horario: nowTime(), status: "Solicitado", resultado: "Pendente" });
     showToast("Solicitação enviada para Exames.");
     closeModal();
     return renderPage("exames");
@@ -3041,7 +3623,9 @@ function handleAction(action, button) {
   if (action === "save-prescription") {
     const form = byId("prescriptionForm");
     if (!requireForm(form)) return;
-    GsiApi.create("prescricoes", { ...formValues(form), horario: nowTime(), status: "Pendente" });
+    const values = formValues(form);
+    const patient = patientById(values.pacienteId);
+    GsiApi.create("prescricoes", { ...values, origem: values.origem || medicationCareOrigin(patient || {}), horario: nowTime(), status: "Pendente", statusMedicacao: "Pendente" });
     showToast("Prescrição enviada para Farmácia.");
     closeModal();
     return renderPage("farmacia");
@@ -3059,12 +3643,39 @@ function handleAction(action, button) {
     return renderPage("transferencias");
   }
   if (action === "rx-status") {
-    GsiApi.update("prescricoes", id, { status: button.dataset.status });
+    const nextStatus = button.dataset.status;
+    const patch = { status: nextStatus, statusMedicacao: nextStatus };
+    if (nextStatus === "Dispensado") {
+      patch.horaDispensacaoMedicacao = nowTime();
+      patch.horaDispensacaoMedicacaoTs = Date.now();
+    }
+    GsiApi.update("prescricoes", id, patch);
     showToast("Status da prescrição atualizado.");
     return renderPage(currentPage);
   }
+  if (action === "view-rx-record") {
+    const rx = GsiApi.list("prescricoes").find((item) => item.id === id);
+    if (!rx) return;
+    openModal("Registro de dispensação", `
+      <div class="record-block">
+        <h3>Medicação dispensada</h3>
+        <div class="form-grid">
+          ${recordField("Paciente", rx.paciente)}
+          ${recordField("Medicamento", medicationDisplayName(rx.medicamento))}
+          ${recordField("Dose", rx.dose)}
+          ${recordField("Via", rx.via)}
+          ${recordField("Horário da prescrição", rx.horario)}
+          ${recordField("Setor/origem", prescriptionOrigin(rx))}
+          ${recordField("Prescritor", rx.prescritor)}
+          ${recordField("Hora da dispensação", rx.horaDispensacaoMedicacao)}
+          ${recordStatusField("Status", rx.statusMedicacao || rx.status)}
+        </div>
+      </div>
+    `, `<button class="secondary-action" data-action="close-modal">Fechar</button>`);
+    return;
+  }
   if (action === "start-collection") {
-    GsiApi.update("exames", id, { status: "Em coleta" });
+    GsiApi.update("exames", id, { status: "Em coleta", horaColeta: nowTime(), horaColetaTs: Date.now() });
     showToast("Coleta iniciada.");
     return renderPage(currentPage);
   }
@@ -3095,7 +3706,8 @@ function handleAction(action, button) {
       observacoes: values.observacoes,
       critico,
       profissionalLiberacao: profissional,
-      horarioLiberacao: nowTime()
+      horarioLiberacao: nowTime(),
+      horarioLiberacaoTs: Date.now()
     });
     showToast(critico ? "Resultado crítico comunicado à equipe." : "Resultado liberado com sucesso.", critico ? "warn" : "success");
     closeModal();
@@ -3107,6 +3719,7 @@ function handleAction(action, button) {
     return renderPage(currentPage);
   }
   if (action === "view-patient") return openPatientModal(id);
+  if (action === "go-to-stage") return renderPage(button.dataset.page || "pacientes");
   if (action === "discharge-patient") {
     setPatientTimeIfMissing(id, "horaDesfecho");
     GsiApi.update("pacientes", id, { status: "Alta", desfecho: "Alta após consulta" });
@@ -3216,23 +3829,127 @@ function handleAction(action, button) {
     showToast("Alta da observação registrada.");
     return renderPage(currentPage);
   }
-  if (action === "open-nursing-modal") return openNursingModal(id);
-  if (action === "save-nursing-evolution") {
-    const form = byId("nursingForm");
+  if (action === "open-nursing-modal") return openNursingEvolutionModal(id);
+  if (action === "open-nursing-evolution-modal") return openNursingEvolutionModal(id);
+  if (action === "open-nursing-vitals-modal") return openNursingVitalsModal(id);
+  if (action === "open-nursing-procedure-modal") return openNursingProcedureModal(id);
+  if (action === "open-medication-admin") return openMedicationAdministrationModal(id);
+  if (action === "save-medication-admin") {
+    const form = byId("medicationAdminForm");
     if (!requireForm(form)) return;
     const values = formValues(form);
-    const profissional = values.profissional === "Outro profissional" ? (values.profissionalOutro || "").trim() : values.profissional;
+    const profissional = nursingProfessional(values);
+    const statusAdministracao = values.statusAdministracao || "Administrada";
+    GsiApi.update("prescricoes", id, {
+      status: statusAdministracao,
+      statusMedicacao: statusAdministracao,
+      horaAdministracaoMedicacao: nowTime(),
+      horaAdministracaoMedicacaoTs: Date.now(),
+      profissionalAdministracao: profissional,
+      motivoNaoAdministracao: values.motivoNaoAdministracao,
+      observacaoAdministracao: values.observacaoAdministracao
+    });
+    showToast("Administração de medicação registrada.");
+    closeModal();
+    return renderPage("enfermagem");
+  }
+  if (action === "save-nursing-evolution") {
+    const form = byId("nursingEvolutionForm");
+    if (!requireForm(form)) return;
+    const values = formValues(form);
+    const profissional = nursingProfessional(values);
     if (!profissional) {
       showToast("Informe o profissional responsável.", "warn");
       return;
     }
     const p = patientById(id);
     const evolucoesEnfermagem = [...(p?.evolucoesEnfermagem || []), {
-      procedimentos: values.procedimentos, medicacoes: values.medicacoes, curativos: values.curativos,
-      evolucao: values.evolucao, sinais: values.sinais, profissional, horario: nowTime()
+      horario: nowTime(),
+      horarioTs: Date.now(),
+      profissional,
+      setorAtual: p?.status || "",
+      estadoGeral: values.estadoGeral,
+      relato: values.relato,
+      achados: values.achados,
+      acaoEnfermagem: values.acaoEnfermagem,
+      orientacoes: values.orientacoes,
+      intercorrencias: values.intercorrencias,
+      necessitaReavaliacao: values.necessitaReavaliacao,
+      evolucao: values.evolucao
     }];
     GsiApi.update("pacientes", id, { evolucoesEnfermagem });
     showToast("Evolução de enfermagem registrada.");
+    closeModal();
+    return renderPage("enfermagem");
+  }
+  if (action === "save-nursing-vitals") {
+    const form = byId("nursingVitalsForm");
+    if (!requireForm(form)) return;
+    const values = formValues(form);
+    const profissional = nursingProfessional(values);
+    if (!profissional) {
+      showToast("Informe o profissional responsÃ¡vel.", "warn");
+      return;
+    }
+    const p = patientById(id);
+    const registro = {
+      horario: nowTime(),
+      horarioTs: Date.now(),
+      profissional,
+      pa: values.pa,
+      fc: values.fc,
+      fr: values.fr,
+      temp: values.temp,
+      sat: values.sat,
+      glicemia: values.glicemia,
+      dor: values.dor,
+      nivelConsciencia: values.nivelConsciencia,
+      observacao: values.observacao
+    };
+    const sinaisVitaisEnfermagem = [...(p?.sinaisVitaisEnfermagem || []), registro];
+    GsiApi.update("pacientes", id, {
+      sinaisVitaisEnfermagem,
+      sinaisVitais: {
+        ...(p?.sinaisVitais || {}),
+        pa: values.pa,
+        fc: values.fc,
+        fr: values.fr,
+        temp: values.temp,
+        sat: values.sat,
+        glicemia: values.glicemia,
+        dor: values.dor,
+        obs: values.observacao
+      }
+    });
+    showToast("Sinais vitais registrados.");
+    closeModal();
+    return renderPage("enfermagem");
+  }
+  if (action === "save-nursing-procedure") {
+    const form = byId("nursingProcedureForm");
+    if (!requireForm(form)) return;
+    const values = formValues(form);
+    const profissional = nursingProfessional(values);
+    if (!profissional) {
+      showToast("Informe o profissional responsÃ¡vel.", "warn");
+      return;
+    }
+    const p = patientById(id);
+    const procedimentosEnfermagem = [...(p?.procedimentosEnfermagem || []), {
+      horario: nowTime(),
+      horarioTs: Date.now(),
+      profissional,
+      tipoProcedimento: values.tipoProcedimento,
+      localRegiao: values.localRegiao,
+      materialUtilizado: values.materialUtilizado,
+      descricaoProcedimento: values.descricaoProcedimento,
+      aspecto: values.aspecto,
+      intercorrencias: values.intercorrencias,
+      resultado: values.resultado,
+      necessitaReavaliacao: values.necessitaReavaliacao
+    }];
+    GsiApi.update("pacientes", id, { procedimentosEnfermagem });
+    showToast("Procedimento/curativo registrado.");
     closeModal();
     return renderPage("enfermagem");
   }

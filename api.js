@@ -24,14 +24,14 @@ const GsiApi = (() => {
     ],
     chamadas: [],
     exames: [
-      { id: "e1", pacienteId: "p3", paciente: "Ana Clara Oliveira", exame: "Hemograma completo", tipo: "Laboratorio", origem: "Atendimentos", solicitante: "Dra. Camila Araujo", horario: "08:50", status: "Solicitado", prioridade: "Urgente", resultado: "Pendente" },
+      { id: "e1", pacienteId: "p3", paciente: "Ana Clara Oliveira", exame: "Hemograma completo", tipo: "Laboratorio", origem: "Consulta Médica", solicitante: "Dra. Camila Araujo", horario: "08:50", status: "Solicitado", prioridade: "Urgente", resultado: "Pendente" },
       { id: "e2", pacienteId: "p5", paciente: "Raimundo Alves Ferreira", exame: "Troponina", tipo: "Laboratorio", origem: "Sala de Estabilização", solicitante: "Dr. Marcos Vieira", horario: "09:05", status: "Em execucao", prioridade: "Emergência", resultado: "Pendente" },
       { id: "e3", pacienteId: "p1", paciente: "Maria José da Silva", exame: "Raio-X de torax", tipo: "Raio-X", origem: "Consulta Médica", solicitante: "Dra. Livia Ramos", horario: "09:18", status: "Solicitado", prioridade: "Urgente", resultado: "Aguardando imagem" }
     ],
     prescricoes: [
-      { id: "rx1", paciente: "Helena Costa Menezes", medicamento: "Ceftriaxona", dose: "1g 12/12h", via: "EV", horario: "09:00", prescritor: "Dra. Camila Araujo", status: "Pendente" },
-      { id: "rx2", paciente: "Mário Sérgio Nascimento", medicamento: "Dipirona", dose: "1g se dor", via: "EV", horario: "09:20", prescritor: "Dr. Marcos Vieira", status: "Separado" },
-      { id: "rx3", paciente: "Renata Alves Prado", medicamento: "Salbutamol spray", dose: "4 jatos", via: "Inalatória", horario: "09:40", prescritor: "Dra. Livia Ramos", status: "Em falta" }
+      { id: "rx1", pacienteId: "p6", paciente: "Francisca Maria Santos", medicamento: "Ceftriaxona", dose: "1g 12/12h", via: "EV", horario: "09:00", origem: "Observação Clínica", prescritor: "Dra. Camila Araujo", status: "Pendente", statusMedicacao: "Pendente" },
+      { id: "rx2", pacienteId: "p1", paciente: "Maria José da Silva", medicamento: "Dipirona", dose: "1g se dor", via: "EV", horario: "09:20", origem: "Consulta Médica", prescritor: "Dr. Marcos Vieira", status: "Separado", statusMedicacao: "Separado" },
+      { id: "rx3", pacienteId: "p5", paciente: "Raimundo Alves Ferreira", medicamento: "Salbutamol spray", dose: "4 jatos", via: "Inalatória", horario: "09:40", origem: "Sala de Estabilização", prescritor: "Dra. Livia Ramos", status: "Em falta", statusMedicacao: "Em falta" }
     ],
     transferencias: [
       { id: "t1", pacienteId: "p5", paciente: "Raimundo Alves Ferreira", motivo: "UTI", destino: "Propriá", status: "Aguardando vaga", acompanhante: "Enf. Joana Matos", checklist: "Completo", saida: "--", tipoTransporte: "Ambulância avançada/SAMU", usouAmbulancia: "Sim" },

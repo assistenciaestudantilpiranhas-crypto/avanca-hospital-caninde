@@ -155,7 +155,61 @@ Regra:
 
 ## Triagem e Classificação de Risco
 
-A triagem registra sinais vitais, queixa e classificação de risco.
+A triagem registra sinais vitais, queixa, alertas clínicos e classificação de risco. Ela deve coletar dados objetivos e alertas clínicos mínimos para apoiar a classificação de risco, a segurança da prescrição e a continuidade do cuidado.
+
+O sistema pode sugerir automaticamente uma classificação de risco com base nos sinais, sintomas e respostas preenchidas no formulário. A confirmação final da classificação de risco deve ser registrada pelo enfermeiro responsável.
+
+Regra conceitual:
+
+- O sistema sugere; o enfermeiro classifica.
+
+O formulário de triagem deve manter os campos atuais já existentes e acrescentar, quando implementado, os seguintes blocos de informação:
+
+### Bloco A — Profissional responsável pela triagem
+
+- nome do profissional
+- categoria profissional
+- registro profissional, quando disponível
+- hora de início da triagem
+- hora de fim da triagem
+
+### Bloco B — História breve/escuta qualificada
+
+- queixa principal
+- início dos sintomas
+- tempo de evolução
+- sintomas associados
+- fator de piora ou melhora, quando informado
+- observações relevantes da triagem
+
+### Bloco C — Sinais vitais e dados objetivos
+
+- pressão arterial
+- frequência cardíaca
+- frequência respiratória
+- saturação de O2
+- temperatura
+- glicemia capilar, quando indicada
+- escala de dor de 0 a 10
+- nível de consciência, quando aplicável
+
+### Bloco D — Alertas clínicos
+
+- alergias
+- medicamentos de uso contínuo
+- comorbidades
+- tratamento em andamento
+- uso recente de medicação antes da chegada
+- gestação ou suspeita de gestação, quando aplicável
+- outros alertas relevantes
+
+### Bloco E — Classificação de risco
+
+- classificação sugerida pelo sistema, quando aplicável
+- classificação confirmada pelo enfermeiro
+- justificativa da classificação
+- prioridade
+- orientação inicial da triagem, quando houver
 
 Campos esperados quando disponíveis:
 
@@ -166,6 +220,14 @@ Campos esperados quando disponíveis:
 - `sinaisVitais`
 - `triagemRisco`
 - `classificacao`
+
+Os dados da triagem devem alimentar:
+
+- o prontuário do atendimento atual
+- o resumo clínico exibido ao médico no modal Registrar conduta
+- os indicadores de tempo e classificação de risco
+
+Os dados de alergias, comorbidades, medicações em uso, tratamento em andamento e sinais vitais devem estar visíveis ao médico antes do registro da conduta, prescrição ou solicitação de exames.
 
 Regra:
 
