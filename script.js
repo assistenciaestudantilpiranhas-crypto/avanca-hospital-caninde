@@ -3123,6 +3123,27 @@ function addTimelineEvent(events, time, label, ts) {
   events.push({ time, label, ts });
 }
 
+function observationVitalsText(item = {}) {
+  return [item.pa, item.fc, item.fr, item.sat, item.temp, item.glicemia, item.dor ? `Dor ${item.dor}` : ""].filter(hasRecordValue).join(" | ") || noRecord;
+}
+
+function observationReassessmentLabel(tipo, item = {}) {
+  const details = [item.profissional, item.conduta ? `Conduta: ${item.conduta}` : ""].filter(hasRecordValue).join(" | ");
+  return `Reavaliação registrada em ${tipo}${details ? ` - ${details}` : ""}`;
+}
+
+function observationReassessmentsList(tipo, obs = {}) {
+  const items = obs.reavaliacoes || [];
+  if (!items.length) return `<p class="muted">${noRecord}</p>`;
+  return listItems(items.map((item, index) => `
+    <strong>Reavaliação ${index + 1} - ${escapeHtml(recordValue(item.horario))}</strong>
+    <br><span class="muted">Profissional: ${escapeHtml(recordValue(item.profissional))}</span>
+    <br><span class="muted">Sinais vitais: ${escapeHtml(observationVitalsText(item))}</span>
+    <br>Evolução: ${escapeHtml(recordValue(item.evolucao))}
+    <br>Conduta: ${escapeHtml(recordValue(item.conduta))}
+  `), `Nenhuma reavaliação registrada em ${tipo}.`);
+}
+
 function listItems(items, emptyText = noRecord) {
   if (!items.length) return `<p class="muted">${escapeHtml(emptyText)}</p>`;
   return `<ul class="list">${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
@@ -3184,7 +3205,7 @@ function openPatientModal(id) {
   });
   observacoes.forEach(([tipo, obs]) => {
     addTimelineEvent(timeline, obs.inicio, `Entrada em ${tipo}`, obs.inicioTimestamp);
-    (obs.reavaliacoes || []).forEach((item) => addTimelineEvent(timeline, item.horario, `Reavaliação em ${tipo}`));
+    (obs.reavaliacoes || []).forEach((item) => addTimelineEvent(timeline, item.horario, observationReassessmentLabel(tipo, item), item.horarioTs));
   });
   if (p.estabilizacao) {
     addTimelineEvent(timeline, p.estabilizacao.inicio, "Entrada na Sala de Estabilização", p.estabilizacao.inicioTimestamp);
@@ -3264,6 +3285,8 @@ function openPatientModal(id) {
       ${optionalRecordField("Tempo de permanência", obs.inicioTimestamp ? elapsedBetween(obs.inicioTimestamp, p.horaDesfechoFinalTs || p.horaDesfechoTs || Date.now()) : "", "full")}
       ${optionalRecordField("Reavaliações", (obs.reavaliacoes || []).length ? `${obs.reavaliacoes.length} registro(s)` : "", "full")}
     </div>
+    <h4>Registros de reavaliação - ${escapeHtml(tipo)}</h4>
+    ${observationReassessmentsList(tipo, obs)}
   `).join("")) : "";
 
   const estabilizacaoBody = p.estabilizacao ? recordSection("Sala de Estabilização", `
@@ -3968,7 +3991,7 @@ function handleAction(action, button) {
     const obs = p?.[modulo] || { reavaliacoes: [] };
     const reavaliacoes = [...(obs.reavaliacoes || []), {
       pa: values.pa, fc: values.fc, sat: values.sat, temp: values.temp,
-      evolucao: values.evolucao, conduta: values.conduta, profissional, horario: nowTime()
+      evolucao: values.evolucao, conduta: values.conduta, profissional, horario: nowTime(), horarioTs: Date.now()
     }];
     GsiApi.update("pacientes", id, { [modulo]: { ...obs, reavaliacoes } });
     showToast("Reavaliação registrada.");
