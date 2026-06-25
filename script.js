@@ -117,8 +117,69 @@ function status(value) {
   return `<span class="status ${cls}">${escapeHtml(displayText(text))}</span>`;
 }
 
+const permissionsByProfile = {
+  "Gestor/Administrador": ["*", "reset-demo"],
+  "Médico": [
+    "open-conduct-modal", "save-conduct",
+    "open-exam-request", "save-exam",
+    "open-prescription", "save-prescription",
+    "open-transfer-request", "save-transfer",
+    "discharge-patient", "discharge-observation"
+  ],
+  "Enfermeiro": [
+    "open-triage-modal", "save-triage",
+    "open-nursing-evolution-modal", "save-nursing-evolution",
+    "open-nursing-vitals-modal", "save-nursing-vitals",
+    "open-nursing-procedure-modal", "save-nursing-procedure",
+    "open-medication-admin", "save-medication-admin",
+    "open-observation-reassess-modal", "save-observation-reassess"
+  ],
+  "Técnico de Enfermagem": [
+    "open-nursing-vitals-modal", "save-nursing-vitals",
+    "open-nursing-procedure-modal", "save-nursing-procedure",
+    "open-medication-admin", "save-medication-admin"
+  ],
+  "Farmácia": [
+    "rx-status", "request-restock", "view-rx-record",
+    "open-stock-item", "save-stock"
+  ],
+  "Laboratório/Exames": [
+    "start-collection", "mark-in-progress",
+    "open-release-modal", "save-exam-release",
+    "cancel-exam", "view-exam-result", "print-exam"
+  ],
+  "Regulação/Transferências": [
+    "open-transfer-request", "save-transfer",
+    "transfer-status", "transfer-checklist",
+    "confirm-transfer-checklist", "transfer-departure"
+  ],
+  "Recepção/Porta de Entrada": [
+    "open-register-patient", "save-patient",
+    "start-care", "call-patient", "call-to-triage"
+  ]
+};
+
+const controlledPermissionActions = new Set(
+  Object.values(permissionsByProfile).flat().filter((action) => action !== "*")
+);
+
+function can(action) {
+  if (!action || !controlledPermissionActions.has(action)) return true;
+  const profile = getOperationalProfile();
+  const allowedActions = permissionsByProfile[profile] || [];
+  return allowedActions.includes("*") || allowedActions.includes(action);
+}
+
+function permittedHtml(action, html) {
+  return can(action) ? html : "";
+}
+
 function actionButton(label, action, id = "", extra = "", cls = "") {
   return `<button class="table-action ${cls}" type="button" data-action="${action}" ${id ? `data-id="${id}"` : ""} ${extra}>${label}</button>`;
+}
+
+function permittedActionButton(label, action, id = "", extra = "", cls = "") {
+  return permittedHtml(action, actionButton(label, action, id, extra, cls));
 }
 
 function pageHead(title, description, actionLabel = "", actionName = "") {
@@ -129,7 +190,7 @@ function pageHead(title, description, actionLabel = "", actionName = "") {
         <h1>${title}</h1>
         <p>${description}</p>
       </div>
-      ${actionLabel ? `<button class="action-button" type="button" data-action="${actionName}">${actionLabel}</button>` : ""}
+      ${actionLabel ? permittedHtml(actionName, `<button class="action-button" type="button" data-action="${actionName}">${actionLabel}</button>`) : ""}
     </div>
   `;
 }
@@ -548,16 +609,27 @@ function patientActionsCell(p) {
 }
 
 function isPatientOperationalVisible(patient = {}) {
-  if (!patient.horaDesfechoFinalTs) return true;
-  return Date.now() - Number(patient.horaDesfechoFinalTs) < 24 * 60 * 60 * 1000;
+  const desfechoTs = Number(patient.horaDesfechoFinalTs || patient.horaDesfechoTs);
+  if (!Number.isFinite(desfechoTs)) return true;
+  return Date.now() - desfechoTs < 24 * 60 * 60 * 1000;
 }
 
 function isPatientActiveCare(patient = {}) {
   if (!patient?.id) return true;
   const finalTerms = ["alta", "alta apos consulta", "transferencia regulada", "transferido", "obito", "evasao", "desistencia", "evasao/desistencia"];
   const text = normalizeText(`${patient.status || ""} ${patient.desfecho || ""} ${patient.desfechoFinal || ""}`);
-  if (patient.horaDesfechoFinal || patient.horaDesfechoFinalTs) return false;
+  if (patient.horaDesfechoFinal || patient.horaDesfechoFinalTs || patient.horaDesfecho || patient.horaDesfechoTs) return false;
   return !finalTerms.some((term) => text.includes(term));
+}
+
+function patientFromCareRecord(record = {}) {
+  if (record.pacienteId) return patientById(record.pacienteId);
+  return GsiApi.list("pacientes").find((p) => p.nome === record.paciente);
+}
+
+function isCareRecordOperational(record = {}) {
+  const patient = patientFromCareRecord(record);
+  return patient ? isPatientActiveCare(patient) : true;
 }
 
 function pacientes() {
@@ -577,7 +649,7 @@ function pacientes() {
     ${pageHead("Pacientes", "Cadastro demonstrativo com busca, chamada, atendimento e classificação de risco.", "Registrar paciente", "open-register-patient")}
     <div class="toolbar">
       <input class="search-box" id="patientSearch" type="search" placeholder="Buscar paciente, CPF ou Cartão SUS">
-      <button class="secondary-action" type="button" data-action="reset-demo">Restaurar dados demo</button>
+      ${permittedHtml("reset-demo", '<button class="secondary-action" type="button" data-action="reset-demo">Restaurar dados demo</button>')}
     </div>
     <section class="panel section-gap queue-panel queue-panel-waiting">
       <h2>Pacientes cadastrados <span class="queue-count">${list.length}</span></h2>
@@ -994,6 +1066,7 @@ function consulta() {
       escapeHtml(getPatientConsultWait(p, a)),
       consultCallCell(p),
       `<div class="actions queue-actions queue-actions-waiting">
+        ${actionButton("Ver resumo assistencial", "view-patient", p.id, "", "queue-action")}
         ${actionButton("Chamar para consulta", "call-to-consult", p.id, "", "queue-action")}
         ${actionButton("Iniciar consulta", "open-start-consult-modal", p.id, "", "queue-action queue-action-primary")}
       </div>`
@@ -1009,11 +1082,12 @@ function consulta() {
       escapeHtml(p.profissionalResponsavel || a?.profissional || "Equipe médica"),
       escapeHtml(p.horaInicioConsulta || a?.inicioConsulta || "--:--"),
       `<div class="actions queue-actions queue-actions-grid">
-        ${actionButton("Registrar conduta", "open-conduct-modal", p.id, "", "queue-action queue-action-primary")}
-        ${actionButton("Solicitar exame", "open-exam-request", p.id, 'data-origem="Consulta Médica"', "queue-action")}
-        ${actionButton("Prescrever medicação", "open-prescription", p.id, "", "queue-action")}
-        ${actionButton("Solicitar transferência", "open-transfer-request", p.id, "", "queue-action")}
-        ${actionButton("Dar alta", "discharge-patient", p.id, "", "danger queue-action queue-action-highlight")}
+        ${actionButton("Ver resumo assistencial", "view-patient", p.id, "", "queue-action")}
+        ${permittedActionButton("Registrar conduta", "open-conduct-modal", p.id, "", "queue-action queue-action-primary")}
+        ${permittedActionButton("Solicitar exame", "open-exam-request", p.id, 'data-origem="Consulta Médica"', "queue-action")}
+        ${permittedActionButton("Prescrever medicação", "open-prescription", p.id, "", "queue-action")}
+        ${permittedActionButton("Solicitar transferência", "open-transfer-request", p.id, "", "queue-action")}
+        ${permittedActionButton("Dar alta", "discharge-patient", p.id, "", "danger queue-action queue-action-highlight")}
       </div>`
     ];
   });
@@ -1248,7 +1322,7 @@ function enfermagem() {
       escapeHtml(`${recordValue(rx.dose)} ${recordValue(rx.via)}`),
       escapeHtml(rx.horaDispensacaoMedicacao || "Sem registro"),
       status("Aguardando administração"),
-      actionButton("Registrar administração", "open-medication-admin", rx.id, "", "queue-action queue-action-primary")
+      permittedActionButton("Registrar administração", "open-medication-admin", rx.id, "", "queue-action queue-action-primary")
     ];
   });
 
@@ -1387,7 +1461,7 @@ function openMedicationAdministrationModal(prescriptionId) {
       </label>
       ${field("Observações", "observacaoAdministracao", "", "full", true, false)}
     </form>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-medication-admin" data-id="${rx.id}">Registrar administração</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button>${permittedHtml("save-medication-admin", `<button class="action-button" data-action="save-medication-admin" data-id="${rx.id}">Registrar administração</button>`)}`);
 
   const form = byId("medicationAdminForm");
   const select = form.querySelector('select[name="profissional"]');
@@ -1403,24 +1477,32 @@ function openMedicationAdministrationModal(prescriptionId) {
 function farmacia() {
   const pendingStatuses = ["Pendente", "Solicitado", "Aguardando separação", "Separado", "Em falta"];
   const prescriptions = GsiApi.list("prescricoes");
-  const pendingPrescriptions = prescriptions.filter((p) => pendingStatuses.includes(p.statusMedicacao || p.status));
+  const pendingPrescriptions = prescriptions.filter((p) => pendingStatuses.includes(p.statusMedicacao || p.status) && isCareRecordOperational(p));
   const dispensedPrescriptions = prescriptions.filter((p) => (p.statusMedicacao || p.status) === "Dispensado");
-  const pendingRows = pendingPrescriptions.map((p) => [
-    escapeHtml(p.paciente), escapeHtml(medicationDisplayName(p.medicamento)), escapeHtml(p.dose), escapeHtml(p.via), escapeHtml(p.horario), escapeHtml(prescriptionOrigin(p)), escapeHtml(p.prescritor), status(p.statusMedicacao || p.status),
-    `<div class="actions queue-actions queue-actions-grid">
-      ${actionButton("Dispensar", "rx-status", p.id, 'data-status="Dispensado"', "queue-action queue-action-primary")}
-      ${actionButton("Separar", "rx-status", p.id, 'data-status="Separado"', "queue-action")}
-      ${actionButton("Informar falta", "rx-status", p.id, 'data-status="Em falta"', "queue-action")}
-      ${actionButton("Solicitar reposição", "request-restock", p.id, `data-nome="${escapeHtml(p.medicamento)}"`, "queue-action")}
-    </div>`
-  ]);
-  const dispensedRows = dispensedPrescriptions.map((p) => [
-    escapeHtml(p.paciente), escapeHtml(medicationDisplayName(p.medicamento)), escapeHtml(p.dose), escapeHtml(p.via), escapeHtml(p.horario), escapeHtml(prescriptionOrigin(p)),
-    escapeHtml(p.prescritor), escapeHtml(p.horaDispensacaoMedicacao || "Sem registro"), status("Dispensado"),
-    `<div class="actions queue-actions queue-actions-grid">
-      ${actionButton("Ver registro", "view-rx-record", p.id, "", "queue-action queue-action-primary")}
-    </div>`
-  ]);
+  const pendingRows = pendingPrescriptions.map((p) => {
+    const patient = patientFromCareRecord(p);
+    return [
+      escapeHtml(p.paciente), escapeHtml(medicationDisplayName(p.medicamento)), escapeHtml(p.dose), escapeHtml(p.via), escapeHtml(p.horario), escapeHtml(prescriptionOrigin(p)), escapeHtml(p.prescritor), status(p.statusMedicacao || p.status),
+      `<div class="actions queue-actions queue-actions-grid">
+        ${patient ? actionButton("Ver resumo assistencial", "view-patient", patient.id, "", "queue-action") : ""}
+        ${permittedActionButton("Dispensar", "rx-status", p.id, 'data-status="Dispensado"', "queue-action queue-action-primary")}
+        ${permittedActionButton("Separar", "rx-status", p.id, 'data-status="Separado"', "queue-action")}
+        ${permittedActionButton("Informar falta", "rx-status", p.id, 'data-status="Em falta"', "queue-action")}
+        ${permittedActionButton("Solicitar reposição", "request-restock", p.id, `data-nome="${escapeHtml(p.medicamento)}"`, "queue-action")}
+      </div>`
+    ];
+  });
+  const dispensedRows = dispensedPrescriptions.map((p) => {
+    const patient = patientFromCareRecord(p);
+    return [
+      escapeHtml(p.paciente), escapeHtml(medicationDisplayName(p.medicamento)), escapeHtml(p.dose), escapeHtml(p.via), escapeHtml(p.horario), escapeHtml(prescriptionOrigin(p)),
+      escapeHtml(p.prescritor), escapeHtml(p.horaDispensacaoMedicacao || "Sem registro"), status("Dispensado"),
+      `<div class="actions queue-actions queue-actions-grid">
+        ${patient ? actionButton("Ver resumo assistencial", "view-patient", patient.id, "", "queue-action") : ""}
+        ${permittedActionButton("Ver registro", "view-rx-record", p.id, "", "queue-action queue-action-primary")}
+      </div>`
+    ];
+  });
   const stock = GsiApi.list("estoque");
   const stockRows = stock.map((s) => [escapeHtml(s.nome), escapeHtml(s.quantidade), escapeHtml(s.minimo), status(s.situacao), escapeHtml(s.validade), escapeHtml(s.local)]);
   return `
@@ -1449,7 +1531,7 @@ function farmacia() {
     <section class="panel section-gap">
       <div class="page-head" style="margin-bottom:14px">
         <h2 style="margin:0">Estoque simplificado</h2>
-        <button class="secondary-action" type="button" data-action="open-stock-item">Adicionar item ao estoque</button>
+        ${permittedHtml("open-stock-item", '<button class="secondary-action" type="button" data-action="open-stock-item">Adicionar item ao estoque</button>')}
       </div>
       <div class="queue-table">${table(["Medicamento", "Quantidade atual", "Estoque mínimo", "Situação", "Validade", "Localização"], stockRows)}</div>
     </section>
@@ -1458,16 +1540,23 @@ function farmacia() {
 
 function examActions(e) {
   const buttons = [];
-  if (e.status === "Solicitado") buttons.push(actionButton("Iniciar coleta", "start-collection", e.id, "", "queue-action queue-action-primary"));
-  if (e.status === "Em coleta") buttons.push(actionButton("Marcar em execução", "mark-in-progress", e.id, "", "queue-action queue-action-primary"));
-  if (["Solicitado", "Em coleta", "Em execucao"].includes(e.status)) buttons.push(actionButton("Liberar resultado", "open-release-modal", e.id, "", "queue-action queue-action-primary"));
-  if (["Solicitado", "Em coleta", "Em execucao"].includes(e.status)) buttons.push(actionButton("Cancelar exame", "cancel-exam", e.id, "", "danger queue-action"));
-  buttons.push(actionButton("Ver resultado", "view-exam-result", e.id, "", "queue-action"));
-  buttons.push(actionButton("Reimprimir solicitação", "print-exam", e.id, "", "queue-action"));
+  const patient = patientFromCareRecord(e);
+  if (patient) buttons.push(actionButton("Ver resumo assistencial", "view-patient", patient.id, "", "queue-action"));
+  if (e.status === "Solicitado") buttons.push(permittedActionButton("Iniciar coleta", "start-collection", e.id, "", "queue-action queue-action-primary"));
+  if (e.status === "Em coleta") buttons.push(permittedActionButton("Marcar em execução", "mark-in-progress", e.id, "", "queue-action queue-action-primary"));
+  if (["Solicitado", "Em coleta", "Em execucao"].includes(e.status)) buttons.push(permittedActionButton("Liberar resultado", "open-release-modal", e.id, "", "queue-action queue-action-primary"));
+  if (["Solicitado", "Em coleta", "Em execucao"].includes(e.status)) buttons.push(permittedActionButton("Cancelar exame", "cancel-exam", e.id, "", "danger queue-action"));
+  buttons.push(permittedActionButton("Ver resultado", "view-exam-result", e.id, "", "queue-action"));
+  buttons.push(permittedActionButton("Reimprimir solicitação", "print-exam", e.id, "", "queue-action"));
   return `<div class="actions queue-actions queue-actions-grid">${buttons.join("")}</div>`;
 }
 
-const validExamOrigins = ["Consulta Médica", "Observação Clínica", "Observação Pediátrica", "Observação Obstétrica", "Sala de Estabilização", "Transferência"];
+const validExamOrigins = ["Consulta Médica", "Observação Clínica", "Observação Pediátrica", "Observação Obstétrica", "Sala de Estabilização", "Enfermagem", "Farmácia", "Exames", "Transferência"];
+
+function normalizeCareOriginLabel(value = "") {
+  const origem = displayText(value || "").trim();
+  return origem === "Enfermagem/Medicação" ? "Enfermagem" : origem;
+}
 
 function inferExamOrigin(patient = {}) {
   const text = [patient.status, patient.desfecho].filter(Boolean).join(" ");
@@ -1480,7 +1569,7 @@ function inferExamOrigin(patient = {}) {
 }
 
 function examCareOrigin(exam = {}, patient = null) {
-  const origem = displayText(exam.origem || "").trim();
+  const origem = normalizeCareOriginLabel(exam.origem || "");
   if (validExamOrigins.includes(origem)) return origem;
   return inferExamOrigin(patient || patientById(exam.pacienteId) || {});
 }
@@ -1491,12 +1580,12 @@ function medicationCareOrigin(patient = {}) {
   if (patient.observacaoPediatrica || text.includes("observação pedi")) return "Observação Pediátrica";
   if (patient.observacaoObstetrica || text.includes("observação obst")) return "Observação Obstétrica";
   if (patient.observacaoClinica || text.includes("observação cl")) return "Observação Clínica";
-  if (text.includes("enfermagem") || text.includes("medicação")) return "Enfermagem/Medicação";
+  if (text.includes("enfermagem") || text.includes("medicação")) return "Enfermagem";
   return "Consulta Médica";
 }
 
 function prescriptionOrigin(prescription = {}) {
-  const origem = displayText(prescription.origem || prescription.setorOrigem || "").trim();
+  const origem = normalizeCareOriginLabel(prescription.origem || prescription.setorOrigem || "");
   if (origem && origem !== "Não informado" && origem !== "Atendimentos") return origem;
   const patient = prescription.pacienteId ? patientById(prescription.pacienteId) : GsiApi.list("pacientes").find((p) => p.nome === prescription.paciente);
   return medicationCareOrigin(patient || {});
@@ -1521,9 +1610,10 @@ function exames() {
   });
 
   const pending = list
-    .filter((e) => e.status !== "Resultado liberado" && e.status !== "Cancelado")
+    .filter((e) => e.status !== "Resultado liberado" && e.status !== "Cancelado" && isCareRecordOperational(e))
     .sort((a, b) => (riskOrder[a._classificacao] ?? 9) - (riskOrder[b._classificacao] ?? 9) || (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
   const finished = list.filter((e) => e.status === "Resultado liberado" || e.status === "Cancelado");
+  const operationalList = list.filter(isCareRecordOperational);
 
   const examRow = (e) => [
     escapeHtml(e._nome), escapeHtml(e.exame), escapeHtml(e.origem || "Não informado"),
@@ -1537,11 +1627,11 @@ function exames() {
   return `
     ${pageHead("Exames", "Fila funcional de solicitações de exames, conectada à Consulta e ao fluxo assistencial do paciente.")}
     <section class="grid module-stats exam-stats">
-      ${metric("Solicitados", list.filter((e) => e.status === "Solicitado").length, "Aguardando coleta", "warning")}
-      ${metric("Em coleta", list.filter((e) => e.status === "Em coleta").length, "Laboratório/Imagem")}
-      ${metric("Em execução", list.filter((e) => e.status === "Em execucao").length, "Em análise", "primary")}
+      ${metric("Solicitados", operationalList.filter((e) => e.status === "Solicitado").length, "Aguardando coleta", "warning")}
+      ${metric("Em coleta", operationalList.filter((e) => e.status === "Em coleta").length, "Laboratório/Imagem")}
+      ${metric("Em execução", operationalList.filter((e) => e.status === "Em execucao").length, "Em análise", "primary")}
       ${metric("Resultados liberados", list.filter((e) => e.status === "Resultado liberado").length, "Disponíveis")}
-      ${metric("Resultados críticos", list.filter((e) => e.status === "Resultado critico comunicado").length, "Comunicação obrigatória", "danger")}
+      ${metric("Resultados críticos", operationalList.filter((e) => e.status === "Resultado critico comunicado").length, "Comunicação obrigatória", "danger")}
     </section>
     <section class="panel section-gap queue-panel queue-panel-waiting">
       <h2>Fila de exames pendentes <span class="queue-count">${pending.length}</span></h2>
@@ -1568,7 +1658,7 @@ function openExamReleaseModal(examId) {
         <input name="profissionalOutro" placeholder="Digite o nome">
       </label>
     </form>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-exam-release" data-id="${e.id}">Confirmar liberação</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button>${permittedHtml("save-exam-release", `<button class="action-button" data-action="save-exam-release" data-id="${e.id}">Confirmar liberação</button>`)}`);
 
   const form = byId("examReleaseForm");
   const select = form.querySelector('select[name="profissional"]');
@@ -1725,11 +1815,11 @@ function strategicIndicatorRow(indicador, resultado, situacao, base, observacao)
 function observationQueueActions(p, modulo, origemLabel, options = {}) {
   const buttons = [actionButton("Registrar reavaliação", "open-observation-reassess-modal", p.id, `data-modulo="${modulo}"`, "queue-action queue-action-primary")];
   buttons.push(actionButton("Ver resumo assistencial", "view-patient", p.id, "", "queue-action"));
-  buttons.push(actionButton("Solicitar exame", "open-exam-request", p.id, `data-origem="${origemLabel}"`, "queue-action"));
-  buttons.push(actionButton("Prescrever medicação", "open-prescription", p.id, "", "queue-action"));
+  buttons.push(permittedActionButton("Solicitar exame", "open-exam-request", p.id, `data-origem="${origemLabel}"`, "queue-action"));
+  buttons.push(permittedActionButton("Prescrever medicação", "open-prescription", p.id, "", "queue-action"));
   if (options.includeStabilization) buttons.push(actionButton("Encaminhar para estabilização", "route-to-stabilization", p.id, "", "queue-action"));
-  buttons.push(actionButton("Solicitar transferência", "open-transfer-request", p.id, "", "queue-action"));
-  buttons.push(actionButton("Dar alta da observação", "discharge-observation", p.id, "", "danger queue-action"));
+  buttons.push(permittedActionButton("Solicitar transferência", "open-transfer-request", p.id, "", "queue-action"));
+  buttons.push(permittedActionButton("Dar alta da observação", "discharge-observation", p.id, "", "danger queue-action"));
   return `<div class="actions queue-actions queue-actions-grid">${buttons.join("")}</div>`;
 }
 
@@ -1826,8 +1916,8 @@ function estabilizacao() {
     `<div class="actions queue-actions queue-actions-grid">
       ${actionButton("Registrar reavaliação", "open-observation-reassess-modal", p.id, 'data-modulo="estabilizacao"', "queue-action queue-action-primary")}
       ${actionButton("Ver resumo assistencial", "view-patient", p.id, "", "queue-action")}
-      ${actionButton("Solicitar transferência", "open-transfer-request", p.id, "", "queue-action")}
-      ${actionButton("Dar alta da observação", "discharge-observation", p.id, "", "danger queue-action")}
+      ${permittedActionButton("Solicitar transferência", "open-transfer-request", p.id, "", "queue-action")}
+      ${permittedActionButton("Dar alta da observação", "discharge-observation", p.id, "", "danger queue-action")}
     </div>`
   ]);
 
@@ -1891,7 +1981,7 @@ function openTransferChecklistModal(transferId) {
       ${transferSafetyChecklist.map((item, index) => `<label><input type="checkbox" name="item${index}" required ${complete ? "checked" : ""}> ${escapeHtml(item)}</label>`).join("")}
     </form>
     <p class="muted" style="margin-top:12px">Status atual do checklist: <strong>${escapeHtml(displayText(transfer.checklist || "Pendente"))}</strong></p>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="confirm-transfer-checklist" data-id="${transfer.id}">Confirmar checklist</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button>${permittedHtml("confirm-transfer-checklist", `<button class="action-button" data-action="confirm-transfer-checklist" data-id="${transfer.id}">Confirmar checklist</button>`)}`);
 }
 
 function observationReassessSummaryClean(patient = {}, modulo = "observacaoClinica") {
@@ -2016,10 +2106,11 @@ function transferencias() {
       `${escapeHtml(t.paciente)}${paciente?.classificacao ? `<br>${tag(paciente.classificacao)}` : ""}`,
       escapeHtml(displayText(t.motivo)), escapeHtml(displayText(t.destino)), status(t.status), escapeHtml(t.acompanhante), status(t.checklist), escapeHtml(saida),
       `<div class="actions queue-actions queue-actions-grid">
-        ${actionButton("Completar checklist", "transfer-checklist", t.id, "", "queue-action")}
-        ${actionButton("Aprovar vaga", "transfer-status", t.id, 'data-status="Vaga confirmada"', "queue-action queue-action-primary")}
-        ${actionButton("Confirmar saída", "transfer-departure", t.id, "", `queue-action${saidaPendente ? " queue-action-muted" : ""}`)}
-        ${actionButton("Cancelar", "transfer-status", t.id, 'data-status="Cancelado"', "danger queue-action")}
+        ${paciente ? actionButton("Ver resumo assistencial", "view-patient", paciente.id, "", "queue-action") : ""}
+        ${permittedActionButton("Completar checklist", "transfer-checklist", t.id, "", "queue-action")}
+        ${permittedActionButton("Aprovar vaga", "transfer-status", t.id, 'data-status="Vaga confirmada"', "queue-action queue-action-primary")}
+        ${permittedActionButton("Confirmar saída", "transfer-departure", t.id, "", `queue-action${saidaPendente ? " queue-action-muted" : ""}`)}
+        ${permittedActionButton("Cancelar", "transfer-status", t.id, 'data-status="Cancelado"', "danger queue-action")}
       </div>`
     ];
   });
@@ -2885,7 +2976,7 @@ function openExamModal(patientId = "p1", origem = "Consulta Médica") {
       ${field("Solicitante", "solicitante", "Dr. Marcos Vieira")}
       ${selectField("Prioridade", "prioridade", ["Rotina", "Urgente", "Emergência"])}
     </form>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-exam">Enviar solicitação</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button>${permittedHtml("save-exam", '<button class="action-button" data-action="save-exam">Enviar solicitação</button>')}`);
 }
 
 function openPrescriptionModal(patientId = "p1") {
@@ -2901,7 +2992,7 @@ function openPrescriptionModal(patientId = "p1") {
       ${field("Via", "via", "EV")}
       ${field("Prescritor", "prescritor", "Dr. Marcos Vieira")}
     </form>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-prescription">Enviar para farmácia</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button>${permittedHtml("save-prescription", '<button class="action-button" data-action="save-prescription">Enviar para farmácia</button>')}`);
 }
 
 function openTransferModal(patientId = "p1") {
@@ -2924,7 +3015,7 @@ function openTransferModal(patientId = "p1") {
       ${selectField("Usou ambulância?", "usouAmbulancia", ["Sim", "Não"])}
       ${field("Profissional acompanhante", "acompanhante", "Enf. Joana Matos")}
     </form>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-transfer">Enviar para transferências</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button>${permittedHtml("save-transfer", '<button class="action-button" data-action="save-transfer">Enviar para transferências</button>')}`);
 
   const form = byId("transferForm");
   const setupOther = (selectName, fieldId, otherLabel) => {
@@ -3394,7 +3485,7 @@ function openStockModal() {
       ${field("Validade", "validade", "12/2026")}
       ${field("Localização", "local", "Armário A1")}
     </form>
-  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button><button class="action-button" data-action="save-stock">Salvar item</button>`);
+  `, `<button class="secondary-action" data-action="close-modal">Cancelar</button>${permittedHtml("save-stock", '<button class="action-button" data-action="save-stock">Salvar item</button>')}`);
 }
 
 function openReportPreview(name) {
@@ -3418,6 +3509,10 @@ classificação de risco.</pre>
 
 function handleAction(action, button) {
   const id = button.dataset.id;
+  if (!can(action)) {
+    showToast("Ação não autorizada para o perfil atual.", "warn");
+    return;
+  }
   if (action === "open-register-patient") return openRegisterPatient();
   if (action === "close-modal") return closeModal();
   if (action === "start-care") {
