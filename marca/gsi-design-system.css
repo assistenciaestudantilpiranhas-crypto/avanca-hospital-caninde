@@ -1,0 +1,177 @@
+/*
+ * GSI Design System — Tokens visuais oficiais
+ * GSI HealthTech / GSI ONE
+ *
+ * Fonte: documentos institucionais de marca (Brandbook GSI HealthTech e
+ * Manual de Identidade Visual GSI ONE), mantidos no repositório de marca.
+ *
+ * Este arquivo é uma PROPOSTA DE TOKENS, isolada e não aplicada integralmente
+ * ao sistema. Apenas os tokens referenciados explicitamente em style.css
+ * (.brand-mark, .login-screen, se existir) estão em uso real; os demais
+ * são referência documental para futura adoção controlada.
+ * Cores funcionais (status/risco) ainda precisam ser conferidas contra
+ * style.css antes de qualquer adoção real.
+ * HEX da paleta primária são leitura visual da logo de referência e
+ * dependem de confirmação a partir do arquivo vetorial original — a validar.
+ */
+
+:root {
+  /* ===================================================================
+   * 1. CORES PRIMÁRIAS — núcleo da marca
+   * =================================================================== */
+  --gsi-azul-profundo: #0A2A52;   /* Logotipo "GSI", textos institucionais, cabeçalhos, sidebar */
+  --gsi-azul-petroleo: #15406E;   /* Gradientes do símbolo, botões primários, destaques */
+  --gsi-teal: #19B3A6;            /* Logotipo "ONE", ícone de cruz/pulso, indicadores positivos */
+  --gsi-turquesa-claro: #4FD1C5;  /* Gradiente final do símbolo "1", acentos, hover, gráficos */
+
+  /* ===================================================================
+   * 2. CORES NEUTRAS — base institucional
+   * =================================================================== */
+  --gsi-branco: #FFFFFF;          /* Fundos principais, área de respiro, cards */
+  --gsi-cinza-gelo: #F4F6F8;      /* Fundo de páginas e seções secundárias */
+  --gsi-cinza-medio: #D7DCE2;     /* Bordas, divisores, campos desabilitados */
+  --gsi-cinza-texto: #3A3F47;     /* Texto de corpo, parágrafos institucionais */
+  --gsi-azul-cinza-escuro: #13243B; /* Títulos sobre fundo claro */
+
+  /* ===================================================================
+   * 3. CORES FUNCIONAIS — status e classificação de risco
+   * REFERÊNCIA DOCUMENTAL APENAS. Realinhadas para refletir as cores
+   * reais já utilizadas e validadas na classificação de risco do sistema
+   * (.tag/.risk-card em style.css). Não substituem a linguagem clínica
+   * já validada no protótipo; ainda não aplicados ao sistema.
+   * =================================================================== */
+  --gsi-risco-vermelho: #D93025;  /* Emergência / sala de estabilização */
+  --gsi-risco-laranja: #EF7D22;   /* Muito urgente */
+  --gsi-risco-amarelo: #D99A00;   /* Urgente / alertas / atenção */
+  --gsi-risco-verde: #169653;     /* Pouco urgente / status concluído-sucesso */
+  --gsi-risco-azul: #276EF1;      /* Não urgente / status informativo */
+
+  /* ===================================================================
+   * 4. GRADIENTE DE MARCA
+   * Direção oficial: azul petróleo → verde-água/turquesa.
+   * Não criar gradientes fora desta lógica.
+   * =================================================================== */
+  --gsi-gradiente-marca: linear-gradient(135deg, var(--gsi-azul-petroleo) 0%, var(--gsi-teal) 60%, var(--gsi-turquesa-claro) 100%);
+
+  /* ===================================================================
+   * 5. TIPOGRAFIA
+   * =================================================================== */
+  --gsi-fonte-sistema: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;     /* Interface do produto GSI ONE — telas, tabelas, formulários */
+  --gsi-fonte-institucional: "Sora", "Manrope", "Inter", sans-serif;                            /* Títulos institucionais — brandbook, apresentações, capas, site */
+
+  --gsi-peso-regular: 400;
+  --gsi-peso-medium: 500;
+  --gsi-peso-semibold: 600;
+  --gsi-peso-bold: 700;
+
+  --gsi-tamanho-h1: 2.25rem;
+  --gsi-tamanho-h2: 1.625rem;
+  --gsi-tamanho-h3: 1.125rem;
+  --gsi-tamanho-corpo: 0.9375rem;
+  --gsi-tamanho-legenda: 0.8125rem;
+
+  /* ===================================================================
+   * 6. ELEMENTOS GRÁFICOS COMPLEMENTARES
+   * =================================================================== */
+  --gsi-raio-borda: 10px;
+  --gsi-sombra-leve: 0 1px 3px rgba(10, 42, 82, 0.08);
+  --gsi-borda-card: 1px solid var(--gsi-cinza-medio);
+
+  /* ===================================================================
+   * 7. TOKENS DE STATUS ADMINISTRATIVO (referência — ainda não aplicados)
+   * =================================================================== */
+  --gsi-status-sucesso-fundo: #E6F6EE;
+  --gsi-status-sucesso-texto: #0F7441;
+  --gsi-status-sucesso-borda: #A2D5BA;   /* calculado — a validar */
+
+  --gsi-status-alerta-fundo: #FFF6D8;
+  --gsi-status-alerta-texto: #7A5200;
+  --gsi-status-alerta-borda: #F0DE9C;    /* calculado — a validar */
+
+  --gsi-status-perigo-fundo: #FDE8E6;
+  --gsi-status-perigo-texto: #9D2119;
+  --gsi-status-perigo-borda: #F3C7C3;
+
+  --gsi-status-info-fundo: #E8F1F8;
+  --gsi-status-info-texto: #0B2B4C;
+  --gsi-status-info-borda: #C3D9EC;      /* calculado — a validar */
+
+  /* ===================================================================
+   * 8. VARIAÇÕES CLARAS/ESCURAS DAS CORES DE RISCO (referência)
+   * =================================================================== */
+  --gsi-risco-vermelho-claro: #FDE8E6;
+  --gsi-risco-vermelho-escuro: #9D2119;
+  --gsi-risco-laranja-claro: #FBECDF;    /* calculado — a validar */
+  --gsi-risco-laranja-escuro: #B35E19;   /* calculado — a validar */
+  --gsi-risco-amarelo-claro: #FFF6D8;
+  --gsi-risco-amarelo-escuro: #A37300;   /* calculado — a validar */
+  --gsi-risco-verde-claro: #E6F6EE;
+  --gsi-risco-verde-escuro: #0F7441;
+  --gsi-risco-azul-claro: #E0E9FE;       /* calculado — a validar */
+  --gsi-risco-azul-escuro: #1D53B5;      /* calculado — a validar */
+
+  /* ===================================================================
+   * 9. ESCALAS COMPLEMENTARES (referência — não aplicadas)
+   * =================================================================== */
+  --gsi-azul-950: #071D35;
+  --gsi-azul-900: #0B2B4C;
+  --gsi-azul-800: #15456D;
+  --gsi-azul-700: #1D5D89;
+  --gsi-azul-100: #E8F1F8;
+  --gsi-azul-50: #F4F8FC;       /* calculado — a validar */
+
+  --gsi-cinza-950: #1F2933;
+  --gsi-cinza-900: #2B3645;     /* calculado — a validar */
+  --gsi-cinza-800: #364152;     /* calculado — a validar */
+  --gsi-cinza-700: #425466;
+  --gsi-cinza-600: #56697A;     /* calculado — a validar */
+  --gsi-cinza-100: #F4F7FB;
+  --gsi-cinza-50: #F8FAFC;
+
+  /* ===================================================================
+   * 10. SOMBRAS E RAIOS (referência)
+   * =================================================================== */
+  --gsi-sombra-suave: 0 8px 22px rgba(9, 35, 63, 0.07);
+  --gsi-sombra-elevada: 0 14px 30px rgba(9, 35, 63, 0.16);
+  --gsi-sombra-padrao: 0 20px 48px rgba(9, 35, 63, 0.14);
+  --gsi-sombra-sucesso: 0 12px 20px rgba(22, 150, 83, 0.23);
+
+  --gsi-raio-pequeno: 7px;
+  --gsi-raio-medio: 12px;
+  --gsi-raio-grande: 16px;
+  --gsi-raio-pill: 999px;
+  --gsi-raio-circular: 50%;
+
+  /* ===================================================================
+   * 11. OVERLAYS (referência)
+   * =================================================================== */
+  --gsi-overlay-branco-08: rgba(255, 255, 255, 0.08);
+  --gsi-overlay-branco-12: rgba(255, 255, 255, 0.12);
+  --gsi-overlay-branco-16: rgba(255, 255, 255, 0.16);
+  --gsi-overlay-branco-22: rgba(255, 255, 255, 0.22);
+
+  /* ===================================================================
+   * 12. REFERÊNCIA — PAINEL DE CHAMADA / TV-MODE (não aplicado)
+   * =================================================================== */
+  --gsi-tv-fundo: #06192D;
+
+  /* ===================================================================
+   * 13. REFERÊNCIA — IMPRESSÃO / PRINT (não aplicado)
+   * =================================================================== */
+  --gsi-print-texto: #111827;
+  --gsi-print-titulo: #071D35;
+  --gsi-print-texto-secundario: #374151;
+  --gsi-print-borda: #D1D5DB;
+  --gsi-print-fundo-destaque: #EEF2F7;
+}
+
+/*
+ * ---------------------------------------------------------------------
+ * Uso real nesta primeira aplicação (repositório avanca-hospital-caninde):
+ * apenas --gsi-gradiente-marca, em .brand-mark (style.css).
+ * Este protótipo não possui .login-screen — token de gradiente de marca
+ * disponível para uso futuro caso uma tela de login seja criada.
+ * Demais tokens: referência documental, não aplicados ao sistema.
+ * Não tocar em .tag, .risk-card, .status, .tv-mode, .tv-panel, @media print.
+ * ---------------------------------------------------------------------
+ */
