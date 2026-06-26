@@ -104,9 +104,13 @@ a:focus-visible {
   width: var(--sidebar-width);
   padding: 22px 18px;
   color: var(--white);
+  /* Identidade GSI ONE — Fase 2 (ajuste fino): degradê institucional sóbrio, vertical,
+     do azul profundo (topo) ao teal escuro e dessaturado (base), evitando o teal/turquesa
+     vivo do gradiente de marca padrão (--gsi-gradiente-marca), forte demais para uma área
+     extensa como a sidebar. Fallback para o azul institucional original. */
   background:
     linear-gradient(180deg, rgba(22, 70, 111, 0.52), transparent 42%),
-    var(--blue-950);
+    linear-gradient(180deg, var(--gsi-azul-profundo, var(--blue-950)) 0%, var(--gsi-azul-petroleo, var(--blue-800)) 55%, #103B38 100%);
   box-shadow: 12px 0 30px rgba(7, 29, 53, 0.18);
 }
 
@@ -286,6 +290,15 @@ a:focus-visible {
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(16px);
   box-shadow: 0 8px 22px rgba(9, 35, 63, 0.04);
+}
+
+/* Identidade GSI ONE — Fase 2: barra de marca aditiva no topo do cabeçalho institucional, sem alterar o restante do .topbar. */
+.topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--gsi-gradiente-marca, var(--blue-700));
 }
 
 .topbar-left {
@@ -591,13 +604,16 @@ h1 {
   border: 0;
   padding: 0 15px;
   color: var(--white);
-  background: linear-gradient(135deg, var(--green-600), var(--green-700));
-  box-shadow: 0 12px 20px rgba(22, 150, 83, 0.23);
+  /* Identidade GSI ONE — Fase 2: gradiente oficial de marca no botão de ação primária geral,
+     com fallback para o gradiente verde original. Não afeta cores de risco clínico,
+     status assistenciais, .tag ou .risk-card. */
+  background: var(--gsi-gradiente-marca, linear-gradient(135deg, var(--green-600), var(--green-700)));
+  box-shadow: 0 12px 20px rgba(21, 64, 110, 0.25);
 }
 
 .action-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 26px rgba(22, 150, 83, 0.3);
+  box-shadow: 0 14px 26px rgba(21, 64, 110, 0.32);
 }
 
 .action-button:active {
@@ -1196,7 +1212,8 @@ h1 {
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
   background: var(--white);
-  box-shadow: var(--shadow-soft);
+  /* Identidade GSI ONE — Fase 2: token de sombra do design system (valor idêntico a --shadow-soft). */
+  box-shadow: var(--gsi-sombra-suave, var(--shadow-soft));
   transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
 }
 
@@ -1208,7 +1225,8 @@ h1 {
 }
 
 .metric-card:hover {
-  box-shadow: var(--shadow-lift);
+  /* Identidade GSI ONE — Fase 2: token de sombra do design system (valor idêntico a --shadow-lift). */
+  box-shadow: var(--gsi-sombra-elevada, var(--shadow-lift));
   transform: translateY(-2px);
 }
 
