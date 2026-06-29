@@ -695,11 +695,11 @@ function atendimentosOperational() {
       `${escapeHtml(patient?.nome || a.paciente || "Paciente fictício")}${a.motivo ? `<br><span class="muted">${escapeHtml(a.motivo)}</span>` : ""}`,
       escapeHtml(a.chegada || patient?.horaChegada || "Sem registro"),
       tag(patient?.classificacao),
-      escapeHtml(stage.label),
+      `<span class="atendimentos-stage-pill">${escapeHtml(stage.label)}</span>`,
       status(patient?.status || a.status),
-      escapeHtml(stage.timeInStage),
-      escapeHtml(stage.totalStay),
-      escapeHtml(stage.responsible),
+      `<div class="atendimentos-time"><small>Na etapa</small>${escapeHtml(stage.timeInStage)}</div>`,
+      `<div class="atendimentos-time"><small>Total</small>${escapeHtml(stage.totalStay)}</div>`,
+      `<span class="atendimentos-responsible">${escapeHtml(stage.responsible)}</span>`,
       `<div class="actions queue-actions queue-actions-grid">
         ${actionButton("Ver prontuário", "view-patient", a.pacienteId || "", "", "queue-action queue-action-primary")}
         ${actionButton("Ir para etapa", "go-to-stage", a.pacienteId || "", `data-page="${stage.page}"`, "queue-action")}
@@ -711,7 +711,7 @@ function atendimentosOperational() {
     <section class="panel section-gap queue-panel queue-panel-waiting">
       <h2>Atendimentos ativos <span class="queue-count">${list.length}</span></h2>
       ${list.length
-        ? `<div class="queue-table care-table">${table(["Paciente", "Chegada", "Risco", "Etapa atual", "Status atual", "Tempo na etapa", "Permanência total", "Responsável/setor", "Ação"], rows)}</div>`
+        ? `<div class="queue-table care-table atendimentos-table">${table(["Paciente", "Chegada", "Risco", "Etapa atual", "Status atual", "Tempo na etapa", "Permanência total", "Responsável/setor", "Ação"], rows)}</div>`
         : '<p class="muted">Nenhum atendimento registrado no momento.</p>'}
     </section>
   `;

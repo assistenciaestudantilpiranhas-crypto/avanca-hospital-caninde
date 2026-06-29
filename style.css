@@ -1142,6 +1142,39 @@ h1 {
   min-width: 150px;
 }
 
+.atendimentos-table th,
+.atendimentos-table td {
+  vertical-align: middle;
+}
+
+.atendimentos-stage-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  font-weight: 600;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.atendimentos-time {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.atendimentos-time small {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.7em;
+  color: var(--gray-500);
+}
+
+.atendimentos-responsible {
+  font-weight: 600;
+}
+
 .record-block {
   margin-bottom: 16px;
 }
