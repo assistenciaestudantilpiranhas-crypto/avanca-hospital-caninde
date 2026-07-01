@@ -37,7 +37,7 @@ const operationalProfiles = [
   "Auditoria"
 ];
 const OPERATIONAL_PROFILE_KEY = "gsi_saude_perfil_operacional";
-const controlledEnvironmentNotice = "A demonstração com login e banco de dados é realizada em ambiente controlado, por se tratar de protótipo técnico em desenvolvimento. O ambiente apresenta os módulos operacionais do GSI ONE aplicados ao programa Avança Hospital.";
+const controlledEnvironmentNotice = "Este ambiente opera como demonstração local do GSI ONE, com perfis operacionais e fluxos assistenciais simulados. A integração com autenticação, Supabase, RLS, auditoria e persistência real é tratada em ambiente controlado do projeto técnico.";
 const technicalCapabilities = [
   "Autenticação por perfil",
   "Banco de dados Supabase",
@@ -142,15 +142,12 @@ function status(value) {
 }
 
 const permissionsByProfile = {
-  "Gestor/Administrador": ["*", "reset-demo"],
-  "Médico": [
-    "open-conduct-modal", "save-conduct",
-    "open-exam-request", "save-exam",
-    "open-prescription", "save-prescription",
-    "open-transfer-request", "save-transfer",
-    "discharge-patient", "discharge-observation"
+  "Administração": ["*", "reset-demo"],
+  "Recepção": [
+    "open-register-patient", "save-patient",
+    "start-care", "call-patient", "call-to-triage"
   ],
-  "Enfermeiro": [
+  "Técnico em Enfermagem": [
     "open-triage-modal", "save-triage",
     "open-nursing-evolution-modal", "save-nursing-evolution",
     "open-nursing-vitals-modal", "save-nursing-vitals",
@@ -158,29 +155,28 @@ const permissionsByProfile = {
     "open-medication-admin", "save-medication-admin",
     "open-observation-reassess-modal", "save-observation-reassess"
   ],
-  "Técnico de Enfermagem": [
-    "open-nursing-vitals-modal", "save-nursing-vitals",
-    "open-nursing-procedure-modal", "save-nursing-procedure",
-    "open-medication-admin", "save-medication-admin"
+  "Médico": [
+    "open-conduct-modal", "save-conduct",
+    "open-exam-request", "save-exam",
+    "open-prescription", "save-prescription",
+    "open-transfer-request", "save-transfer",
+    "discharge-patient", "discharge-observation"
   ],
   "Farmácia": [
     "rx-status", "request-restock", "view-rx-record",
     "open-stock-item", "save-stock"
   ],
-  "Laboratório/Exames": [
+  "Técnico em RX": [
     "start-collection", "mark-in-progress",
     "open-release-modal", "save-exam-release",
     "cancel-exam", "view-exam-result", "print-exam"
   ],
-  "Regulação/Transferências": [
+  "Regulação de Transferência": [
     "open-transfer-request", "save-transfer",
     "transfer-status", "transfer-checklist",
     "confirm-transfer-checklist", "transfer-departure"
   ],
-  "Recepção/Porta de Entrada": [
-    "open-register-patient", "save-patient",
-    "start-care", "call-patient", "call-to-triage"
-  ]
+  "Auditoria": []
 };
 
 const controlledPermissionActions = new Set(
@@ -536,7 +532,7 @@ function dashboard() {
       <div>
         <span class="eyebrow">Plataforma operacional do ecossistema GSI HealthTech</span>
         <h2>Fluxo assistencial integrado, rastreável e orientado por perfil</h2>
-        <p>O GSI ONE evolui para uma plataforma operacional com autenticação por perfil, banco de dados Supabase, RLS, trilha de auditoria e persistência dos fluxos assistenciais.</p>
+        <p>Este protótipo opera em modo demonstrativo local, com perfis oficiais e fluxos assistenciais simulados. A integração com autenticação, Supabase, RLS, auditoria e persistência real é tratada em ambiente controlado do projeto técnico.</p>
       </div>
       <div class="hero-kpis">
         <article><small>Pacientes triados</small><strong>${percentualTriados === null ? "--" : `${percentualTriados}%`}</strong></article>
@@ -817,7 +813,7 @@ function stageResponsible(page = "") {
     "observacao-pediatrica": "Observação Pediátrica",
     "observacao-obstetrica": "Observação Obstétrica",
     estabilizacao: "Sala de Estabilização",
-    transferencias: "Regulação/Transferências",
+    transferencias: "Regulação de Transferência",
     pacientes: "Equipe de plantão"
   };
   return labels[page] || "Equipe de plantão";

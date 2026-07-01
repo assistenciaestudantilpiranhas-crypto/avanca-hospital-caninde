@@ -1,8 +1,8 @@
 # GSI ONE - Protótipo Técnico
 
-Protótipo técnico do GSI ONE, plataforma operacional do ecossistema GSI HealthTech para fluxos assistenciais integrados, login por perfil, governança assistencial, rastreabilidade e auditabilidade.
+Protótipo técnico do GSI ONE, plataforma operacional do ecossistema GSI HealthTech para fluxos assistenciais integrados, governança assistencial, rastreabilidade e auditabilidade.
 
-O ambiente demonstrativo técnico contempla a evolução do projeto para autenticação por perfil, banco de dados Supabase, regras de segurança por RLS, trilha de auditoria, persistência dos fluxos assistenciais e módulos operacionais integrados. Este repositório público não contém informações de acesso, endereços técnicos internos ou dados sensíveis.
+Este ambiente opera como demonstração local do GSI ONE, com perfis operacionais e fluxos assistenciais simulados. A integração com autenticação, Supabase, RLS, auditoria e persistência real é tratada em ambiente controlado do projeto técnico. Este repositório público não contém informações de acesso, endereços técnicos internos ou dados sensíveis.
 
 ## Arquitetura conceitual
 
@@ -21,6 +21,10 @@ Cadastro e recepção, Atendimentos, Painel de Chamada, Triagem e classificaçã
 ## Perfis operacionais
 
 Administração, Recepção, Técnico em Enfermagem, Médico, Farmácia, Técnico em RX, Regulação de Transferência e Auditoria.
+
+## Alinhamento local de perfis
+
+As permissões demonstrativas do protótipo usam os perfis oficiais acima para simular acesso por área operacional. Essa camada local não cria login real, não conecta ao Supabase e não substitui as regras de RLS/permissões do projeto técnico controlado.
 
 ## Executar localmente
 
