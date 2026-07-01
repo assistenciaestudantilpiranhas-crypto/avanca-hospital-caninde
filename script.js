@@ -1,20 +1,21 @@
 const menuItems = [
   ["dashboard", "Dashboard", "DB"],
-  ["pacientes", "Pacientes", "PA"],
+  ["pacientes", "Cadastro e Recepção", "CR"],
   ["atendimentos", "Atendimentos", "AT"],
   ["painel-chamada", "Painel de Chamada", "CH"],
   ["risco", "Classificação de Risco", "CR"],
   ["triagem", "Triagem", "TR"],
-  ["consulta", "Consulta", "CO"],
-  ["enfermagem", "Enfermagem", "EN"],
+  ["consulta", "Consulta Médica", "CM"],
+  ["enfermagem", "Conduta e Desfechos", "CD"],
   ["farmacia", "Farmácia", "FA"],
   ["exames", "Exames", "EX"],
   ["estabilizacao", "Sala de Estabilização", "SE"],
   ["observacao-clinica", "Observação Clínica", "OC"],
   ["observacao-pediatrica", "Observação Pediátrica", "OP"],
   ["observacao-obstetrica", "Observação Obstétrica", "OO"],
-  ["transferencias", "Transferências", "TF"],
+  ["transferencias", "Transferência Regulada", "TF"],
   ["indicadores", "Indicadores", "IN"],
+  ["auditoria", "Auditoria", "AU"],
   ["relatorios", "Relatórios", "RL"],
   ["configuracoes", "Configurações", "CF"],
   ["sair", "Sair", "SA"]
@@ -26,16 +27,39 @@ const sectorOptions = [
 ];
 
 const operationalProfiles = [
-  "Gestor/Administrador",
+  "Administração",
+  "Recepção",
+  "Técnico em Enfermagem",
   "Médico",
-  "Enfermeiro",
-  "Técnico de Enfermagem",
   "Farmácia",
-  "Laboratório/Exames",
-  "Regulação/Transferências",
-  "Recepção/Porta de Entrada"
+  "Técnico em RX",
+  "Regulação de Transferência",
+  "Auditoria"
 ];
 const OPERATIONAL_PROFILE_KEY = "gsi_saude_perfil_operacional";
+const controlledEnvironmentNotice = "A demonstração com login e banco de dados é realizada em ambiente controlado, por se tratar de protótipo técnico em desenvolvimento. O ambiente apresenta os módulos operacionais do GSI ONE aplicados ao programa Avança Hospital.";
+const technicalCapabilities = [
+  "Autenticação por perfil",
+  "Banco de dados Supabase",
+  "Regras de segurança por RLS",
+  "Trilha de auditoria",
+  "Persistência dos fluxos assistenciais",
+  "Módulos assistenciais integrados"
+];
+const functionalModules = [
+  "Cadastro e recepção",
+  "Painel de chamada",
+  "Triagem e classificação de risco",
+  "Consulta médica",
+  "Conduta e desfechos",
+  "Observação clínica, pediátrica e obstétrica",
+  "Sala de estabilização",
+  "Transferência regulada",
+  "Farmácia",
+  "Exames",
+  "Indicadores",
+  "Auditoria"
+];
 
 const riskClass = { Vermelho: "red", Laranja: "orange", Amarelo: "yellow", Verde: "green", Azul: "blue" };
 let currentPage = window.location.hash.replace("#", "") || "dashboard";
@@ -186,7 +210,7 @@ function pageHead(title, description, actionLabel = "", actionName = "") {
   return `
     <div class="page-head">
       <div>
-        <span class="eyebrow">GSI Saude</span>
+        <span class="eyebrow">GSI ONE</span>
         <h1>${title}</h1>
         <p>${description}</p>
       </div>
@@ -507,17 +531,24 @@ function dashboard() {
   const percentualTriados = pacientesTotal ? Math.round((pacientesTriados / pacientesTotal) * 100) : null;
 
   return `
-    ${pageHead("Dashboard", "Visão operacional da porta de entrada, classificação de risco, farmácia, exames, observação e transferências.")}
+    ${pageHead("Dashboard", "Visão operacional da porta de entrada, classificação de risco, farmácia, exames, observação, estabilização, transferência regulada e auditoria.")}
     <section class="executive-hero">
       <div>
-        <span class="eyebrow">Painel executivo</span>
-        <h2>Fluxo assistencial monitorado em tempo real</h2>
-        <p>Ambiente demonstrativo com armazenamento local temporário, preparado para evoluir para API, banco de dados e integrações oficiais.</p>
+        <span class="eyebrow">Plataforma operacional do ecossistema GSI HealthTech</span>
+        <h2>Fluxo assistencial integrado, rastreável e orientado por perfil</h2>
+        <p>O GSI ONE evolui para uma plataforma operacional com autenticação por perfil, banco de dados Supabase, RLS, trilha de auditoria e persistência dos fluxos assistenciais.</p>
       </div>
       <div class="hero-kpis">
         <article><small>Pacientes triados</small><strong>${percentualTriados === null ? "--" : `${percentualTriados}%`}</strong></article>
         <article><small>Prescrições dispensadas</small><strong>${percentualDispensado === null ? "--" : `${percentualDispensado}%`}</strong></article>
         <article><small>Resultados liberados</small><strong>${percentualLiberado === null ? "--" : `${percentualLiberado}%`}</strong></article>
+      </div>
+    </section>
+    <section class="panel section-gap">
+      <h2>Ambiente demonstrativo técnico</h2>
+      <p class="muted">${controlledEnvironmentNotice}</p>
+      <div class="grid module-stats section-gap">
+        ${technicalCapabilities.map((item) => metric(item, "OK", "Arquitetura demonstrativa", "primary")).join("")}
       </div>
     </section>
     <p class="dashboard-row-label">Atenção imediata</p>
@@ -831,7 +862,7 @@ function painelTv() {
     <main class="tv-panel">
       <header class="tv-header">
         <span>Hospital Municipal Haydée Carvalho Leite Santos</span>
-        <strong>GSI Saúde</strong>
+        <strong>GSI ONE</strong>
         <h1>Painel de Chamada</h1>
         <div class="tv-audio-control">
           <span class="${audio.active ? "is-active" : ""}">${audio.label}</span>
@@ -2217,7 +2248,11 @@ function indicadores() {
   ];
 
   return `
-    ${pageHead("Indicadores", "Painel gerencial para acompanhamento assistencial, farmácia, exames e faturamento.")}
+    ${pageHead("Indicadores", "Visão operacional e gerencial do GSI ONE para tempos assistenciais, fluxo do paciente, observação, estabilização, transferências, exames, farmácia, auditoria e apoio à gestão.")}
+    <section class="panel">
+      <h2>Indicadores operacionais do GSI ONE</h2>
+      <p class="muted">Os indicadores consolidam rastreabilidade, persistência em banco, integração dos fluxos e apoio à governança assistencial, contemplando tempos assistenciais, fluxo do paciente, observação e estabilização, transferências, exames, farmácia e auditoria.</p>
+    </section>
     <section class="grid stats-grid">
       ${metric("Total de atendimentos", atendimentos.length + 123, "Mês atual", "primary")}
       ${metric("Prescrições atendidas", "92%", "Farmácia", "primary")}
@@ -2624,7 +2659,7 @@ function openMobilidadeReportModal() {
   openModal("Relatório de Mobilidade Assistencial", `
     <section class="section-gap report-cover">
       <p class="report-org">Hospital Municipal Haydée Carvalho Leite Santos</p>
-      <p class="report-system">GSI Saúde</p>
+      <p class="report-system">GSI ONE</p>
       <p class="report-observatory">Observatório da Mobilidade Assistencial de Canindé</p>
       <h2 style="margin:0">Relatório Técnico Demonstrativo</h2>
       <p class="report-place">Canindé de São Francisco/SE</p>
@@ -2767,7 +2802,7 @@ function openMobilidadeReportModal() {
     </section>
 
     <section class="section-gap">
-      <p class="muted">Documento demonstrativo gerado pelo protótipo GSI Saúde. Dados fictícios. Uso exclusivo para validação de metodologia e apresentação institucional.</p>
+      <p class="muted">Documento demonstrativo gerado pelo protótipo técnico GSI ONE. Dados fictícios. Uso exclusivo para validação de metodologia e apresentação institucional.</p>
     </section>
   `, `<button class="secondary-action" data-action="close-modal">Fechar</button><button class="action-button" data-action="print-report">Imprimir / salvar PDF</button>`);
 
@@ -2778,6 +2813,30 @@ function openMobilidadeReportModal() {
 function relatorios() {
   const reports = ["Relatório diário de atendimentos", "Relatório de classificação de risco", "Relatório de transferências", "Relatório de observação clínica", "Relatório de produção SUS", "Relatório de registros incompletos", "Relatório gerencial para Secretaria Municipal de Saúde", "Relatório de farmácia", "Relatório de estoque crítico", "Relatório de dispensação de medicamentos", "Relatório de exames laboratoriais", "Relatório de exames de imagem", "Relatório de resultados críticos"];
   return `${pageHead("Relatórios", "Área demonstrativa para emissão de relatórios operacionais e gerenciais.")}<section class="grid report-grid">${reports.map((r) => `<article class="report-card"><strong>${r}</strong><p class="muted">Modelo pronto para filtros por período, setor e classificação.</p><button class="secondary-action" type="button" data-action="generate-report" data-nome="${escapeHtml(r)}">Gerar</button></article>`).join("")}</section>`;
+}
+
+function auditoria() {
+  const auditItems = [
+    ["Login por perfil", "Rastreia o perfil operacional responsável pela ação demonstrativa."],
+    ["Eventos assistenciais", "Organiza registros de cadastro, triagem, consulta, conduta, exames, farmácia, observação, estabilização e transferência regulada."],
+    ["Persistência em banco", "Prevê continuidade dos fluxos assistenciais em base estruturada."],
+    ["RLS e segurança", "Orienta regras de acesso por perfil e proteção das rotinas operacionais."],
+    ["Governança assistencial", "Apoia revisão técnica, indicadores, auditoria e tomada de decisão."]
+  ];
+  return `
+    ${pageHead("Auditoria", "Trilha demonstrativa para rastreabilidade, auditabilidade, segurança por perfil e governança assistencial.")}
+    <section class="panel">
+      <h2>Trilha de auditoria do GSI ONE</h2>
+      <p class="muted">Área demonstrativa para evidenciar como os fluxos operacionais podem ser auditados por perfil, módulo, evento assistencial e etapa do atendimento.</p>
+      ${table(["Eixo", "Aplicação no protótipo"], auditItems.map(([axis, desc]) => [escapeHtml(axis), escapeHtml(desc)]))}
+    </section>
+    <section class="panel section-gap">
+      <h2>Módulos auditáveis</h2>
+      <div class="grid module-stats">
+        ${functionalModules.map((item) => metric(item, "ATIVO", "Fluxo integrado")).join("")}
+      </div>
+    </section>
+  `;
 }
 
 const configToggles = [
@@ -2793,7 +2852,7 @@ function getConfig(id) {
 
 function configuracoes() {
   return `
-    ${pageHead("Configurações", "Parâmetros estruturais do protótipo para usuários, perfis, setores, salas e protocolos.")}
+    ${pageHead("Configurações", "Parâmetros estruturais do protótipo para usuários, perfis, setores, salas, segurança, auditoria e protocolos.")}
     <section class="grid two-column">
       <div class="panel">
         <h2>Preferências do sistema</h2>
@@ -2804,7 +2863,14 @@ function configuracoes() {
           </div>
         `).join("")}
       </div>
-      <div class="panel"><h2>Módulos estruturais</h2><div class="grid" style="grid-template-columns:1fr">${["Usuários", "Perfis de acesso", "Setores", "Salas", "Protocolos", "Parâmetros assistenciais"].map((item) => `<div class="switch-row"><span>${item}</span><button class="secondary-action" type="button" data-action="generic-toast">Configurar</button></div>`).join("")}</div></div>
+      <div class="panel"><h2>Módulos estruturais</h2><div class="grid" style="grid-template-columns:1fr">${["Usuários", "Perfis de acesso", "Segurança por RLS", "Trilha de auditoria", "Setores", "Salas", "Protocolos", "Parâmetros assistenciais"].map((item) => `<div class="switch-row"><span>${item}</span><button class="secondary-action" type="button" data-action="generic-toast">Configurar</button></div>`).join("")}</div></div>
+    </section>
+    <section class="panel section-gap">
+      <h2>Sobre o ambiente</h2>
+      <p class="muted">${controlledEnvironmentNotice}</p>
+      <div class="grid module-stats section-gap">
+        ${technicalCapabilities.map((item) => metric(item, "OK", "Padrão técnico GSI ONE", "primary")).join("")}
+      </div>
     </section>
   `;
 }
@@ -2827,9 +2893,10 @@ const pages = {
   "observacao-obstetrica": observacaoObstetrica,
   transferencias,
   indicadores,
+  auditoria,
   relatorios,
   configuracoes,
-  sair: () => pageHead("Sair", "Protótipo visual sem autenticação real. Em uma versão futura, esta ação encerraria a sessão.")
+  sair: () => pageHead("Sair", "Sessão demonstrativa encerrada. Em ambiente operacional, o encerramento respeita autenticação por perfil, segurança e trilha de auditoria.")
 };
 
 let tvRefreshTimer = null;
